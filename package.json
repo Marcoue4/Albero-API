@@ -1,0 +1,32 @@
+{
+  "name": "albero-api",
+  "version": "1.0.0",
+  "description": "Inventory API for Albero backed by SQL Server",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "check-db": "node scripts/check-db.js",
+    "sync-images": "node scripts/sync-images.js",
+    "test": "node --test \"tests/**/*.test.js\"",
+    "test:unit": "node --test \"tests/unit/**/*.test.js\"",
+    "test:integration": "node --test \"tests/integration/**/*.test.js\"",
+    "smoke": "node scripts/smoke.js"
+  },
+  "keywords": [
+    "express",
+    "sql-server",
+    "inventory",
+    "api"
+  ],
+  "author": "Codex",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@vercel/blob": "^2.5.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "mssql": "^12.6.0"
+  }
+}

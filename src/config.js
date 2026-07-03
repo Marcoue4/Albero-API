@@ -27,6 +27,10 @@ const config = {
   maxStockLookupSkus: parseNumber(process.env.MAX_STOCK_LOOKUP_SKUS, 100),
   stockCacheTtlMs: parseNumber(process.env.STOCK_CACHE_TTL_MS, 300000),
   requireSqlStockCache: parseBoolean(process.env.REQUIRE_SQL_STOCK_CACHE, false),
+  currentSeasonCodes: (process.env.CURRENT_SEASON_CODES || "")
+    .split(",")
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean),
   blob: {
     storeId:
       process.env.BLOB_STORE_ID ||

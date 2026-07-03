@@ -16,6 +16,46 @@ function normalizeSearchText(value) {
     .trim();
 }
 
+function normalizeSeasonCode(value) {
+  const cleaned = String(value || "").trim().toUpperCase();
+  return cleaned || null;
+}
+
+function resolveCurrentSeasonCodes(products) {
+  if (config.currentSeasonCodes.length) {
+    return new Set(config.currentSeasonCodes);
+  }
+
+  let highestNumericSeason = null;
+
+  for (const product of products) {
+    const seasonCode = normalizeSeasonCode(product.seasonCode);
+    const numericSeason = Number.parseInt(seasonCode || "", 10);
+
+    if (!Number.isFinite(numericSeason)) {
+      continue;
+    }
+
+    if (highestNumericSeason === null || numericSeason > highestNumericSeason) {
+      highestNumericSeason = numericSeason;
+    }
+  }
+
+  return new Set(highestNumericSeason === null ? [] : [String(highestNumericSeason)]);
+}
+
+function isCurrentSeasonProduct(product, currentSeasonCodes) {
+  const seasonCode = normalizeSeasonCode(product.seasonCode);
+  return Boolean(seasonCode && currentSeasonCodes.has(seasonCode));
+}
+
+function isVisibleCatalogProduct(entry, currentSeasonCodes) {
+  return (
+    entry.summary.availability === "available" ||
+    isCurrentSeasonProduct(entry.summary, currentSeasonCodes)
+  );
+}
+
 function compareSeasonCodes(left, right, direction = "desc") {
   const leftInt = Number.parseInt(left || "", 10);
   const rightInt = Number.parseInt(right || "", 10);
@@ -178,11 +218,14 @@ function createCatalogService() {
       getBaseCatalog(),
       getActiveVariantTotals(),
     ]);
+    const currentSeasonCodes = resolveCurrentSeasonCodes(baseCatalog.products);
 
-    return baseCatalog.products.map((product) => ({
-      base: product,
-      summary: buildProductSummary(product, liveStock),
-    }));
+    return baseCatalog.products
+      .map((product) => ({
+        base: product,
+        summary: buildProductSummary(product, liveStock),
+      }))
+      .filter((entry) => isVisibleCatalogProduct(entry, currentSeasonCodes));
   }
 
   return {
@@ -217,8 +260,14 @@ function createCatalogService() {
       const stockByVariantId = await getVariantStockByIds(
         product.variants.map((variant) => variant.variantId)
       );
+      const detail = buildProductDetail(product, stockByVariantId);
+      const currentSeasonCodes = resolveCurrentSeasonCodes(baseCatalog.products);
 
-      return buildProductDetail(product, stockByVariantId);
+      if (detail.availability !== "available" && !isCurrentSeasonProduct(detail, currentSeasonCodes)) {
+        throw HttpError.notFound(`Product not found: ${productId}`);
+      }
+
+      return detail;
     },
 
     async lookupStock(skus) {

@@ -80,3 +80,33 @@ test("GET /api/catalog/facets returns aggregate filter data", async () => {
   assert.ok(payload.seasons.length > 0);
   assert.ok(payload.availability.available >= 1);
 });
+
+test("old-season zero-stock products are pruned instead of counted unavailable", async () => {
+  const facetsResponse = await fetch(`${testServer.baseUrl}/api/catalog/facets`);
+  const facetsPayload = await facetsResponse.json();
+  const currentSeasonCode = facetsPayload.seasons
+    .map((season) => String(season.value || ""))
+    .filter((season) => Number.isFinite(Number.parseInt(season, 10)))
+    .sort((left, right) => Number.parseInt(right, 10) - Number.parseInt(left, 10))[0];
+  const unavailableResponse = await fetch(
+    `${testServer.baseUrl}/api/products?availability=unavailable&page=1&pageSize=20`
+  );
+  const unavailablePayload = await unavailableResponse.json();
+
+  assert.equal(facetsResponse.status, 200);
+  assert.equal(unavailableResponse.status, 200);
+  assert.ok(currentSeasonCode);
+  assert.ok(unavailablePayload.pagination.totalItems >= 1);
+  assert.ok(
+    unavailablePayload.items.every((item) => item.seasonCode === currentSeasonCode),
+    "only current-season products should remain visible as unavailable"
+  );
+
+  const oldSeasonResponse = await fetch(
+    `${testServer.baseUrl}/api/products?brand=DIVE%20DIVINE&seasonCode=232&availability=unavailable&page=1&pageSize=10`
+  );
+  const oldSeasonPayload = await oldSeasonResponse.json();
+
+  assert.equal(oldSeasonResponse.status, 200);
+  assert.equal(oldSeasonPayload.pagination.totalItems, 0);
+});

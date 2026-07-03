@@ -118,7 +118,7 @@ test("normalizes lowercase style names into cleaner storefront names", () => {
   assert.equal(catalog.products[0].descriptionShort, "H-Reymond");
 });
 
-test("prefers subtype plus brand when only a raw style name is available", () => {
+test("prefers subtype plus style name when only a raw style name is available", () => {
   const rows = [
     makeRow({
       TI_DES: "BOSS",
@@ -132,6 +132,6 @@ test("prefers subtype plus brand when only a raw style name is available", () =>
   ];
   const catalog = mapCatalogRowsToBaseCatalog(rows);
 
-  assert.equal(catalog.products[0].name, "Abito BOSS");
-  assert.equal(catalog.products[0].descriptionShort, "Abito BOSS");
+  assert.equal(catalog.products[0].name, "Abito H-Reymond");
+  assert.equal(catalog.products[0].descriptionShort, "Abito H-Reymond");
 });

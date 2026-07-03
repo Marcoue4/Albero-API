@@ -10,6 +10,7 @@ function getPoolConfig() {
     server: config.db.server,
     port: config.db.port,
     database: config.db.database,
+    requestTimeout: config.db.requestTimeoutMs,
     pool: {
       max: 10,
       min: 0,

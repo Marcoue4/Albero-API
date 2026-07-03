@@ -114,15 +114,15 @@ function looksLikeRawStyleName(value) {
   return /^[a-z0-9][a-z0-9\s\-'/]+$/i.test(compact);
 }
 
-function buildFallbackCatalogName(groupDescription, brand) {
+function buildFallbackCatalogName(groupDescription, styleName) {
   const normalizedGroup = cleanText(groupDescription);
-  const normalizedBrand = cleanText(brand);
+  const normalizedStyleName = normalizeDisplayName(styleName);
 
-  if (normalizedGroup && normalizedBrand) {
-    return `${normalizedGroup} ${normalizedBrand}`;
+  if (normalizedGroup && normalizedStyleName) {
+    return `${normalizedGroup} ${normalizedStyleName}`;
   }
 
-  return normalizedGroup || normalizedBrand || null;
+  return normalizedGroup || normalizedStyleName || null;
 }
 
 function minPositivePrice(values) {
@@ -199,7 +199,7 @@ function buildBaseProduct(rows) {
       "GR_DES",
     ]);
   const rawName = pickedName.value || `Articolo ${modelId}`;
-  const fallbackCatalogName = buildFallbackCatalogName(firstRow.GR_DES, brand);
+  const fallbackCatalogName = buildFallbackCatalogName(firstRow.GR_DES, firstRow.MD_DES);
   const shouldPreferFallbackCatalogName =
     pickedName.source === "MD_DES" &&
     looksLikeRawStyleName(rawName) &&

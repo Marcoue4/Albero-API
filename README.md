@@ -64,7 +64,7 @@ Request body:
 }
 ```
 
-Returns live exact size stock derived from `Barcode` and `Taglie_righe`.
+Returns live exact size stock derived from net `ESI_ETICHETTE` quantities in `BARCODE_ESISTENZA_RFID`.
 
 ### `GET /api/catalog/facets`
 
@@ -124,11 +124,22 @@ IMAGE_SOURCE_LOCAL_ROOT=D:\Foto
 - Force re-upload:
   `npm run sync-images -- --force`
 
+## Stock Cache
+
+For production, install the SQL-side stock cache and refresh it on a schedule:
+
+1. Run `npm run install-stock-cache` with a SQL login that can create tables/procedures in `dbo`.
+2. If the installer is not run as the API login, set `STOCK_CACHE_GRANT_USER=<api_db_user>` before installing so the API receives `SELECT` and `EXECUTE` permissions.
+3. Run `npm run refresh-stock-cache` after installation, then schedule it with Windows Task Scheduler or SQL Agent.
+
+When `dbo.Albero_Stock_Cache` exists and has rows, the API reads stock from that table. Until then it falls back to the live RFID aggregation. Set `REQUIRE_SQL_STOCK_CACHE=true` in production if a missing cache should fail loudly.
+
 ## Notes
 
 - Product ids use `mdl_<MD_ID>`.
 - Variant ids use `var_<VA_ID>`.
 - Variant `sku` is built as `trim(MD_CODICE) + trim(VA_CODICE)`.
+- Catalog metadata comes from `dbo.Articoli_Su_Sito_Plus`; sellable stock comes from net RFID existence, not raw barcode-label rows.
 - If the image manifest exists, product image `url` values come from it.
 - If the manifest does not exist yet, image `url` stays `null` and `sourcePath` is still returned in detailed image objects.
 

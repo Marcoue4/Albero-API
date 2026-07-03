@@ -60,9 +60,8 @@ test("POST /api/stock/lookup returns exact size stock for a known variant SKU", 
   const payload = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(payload.stocks[KNOWN_STOCK_SKU].totalQty, 6);
+  assert.equal(payload.stocks[KNOWN_STOCK_SKU].totalQty, 5);
   assert.deepEqual(payload.stocks[KNOWN_STOCK_SKU].sizeQty, {
-    "40": 1,
     "41": 1,
     "42": 1,
     "43": 1,

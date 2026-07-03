@@ -25,6 +25,8 @@ const config = {
   defaultPageSize: parseNumber(process.env.DEFAULT_PAGE_SIZE, 24),
   maxPageSize: parseNumber(process.env.MAX_PAGE_SIZE, 100),
   maxStockLookupSkus: parseNumber(process.env.MAX_STOCK_LOOKUP_SKUS, 100),
+  stockCacheTtlMs: parseNumber(process.env.STOCK_CACHE_TTL_MS, 300000),
+  requireSqlStockCache: parseBoolean(process.env.REQUIRE_SQL_STOCK_CACHE, false),
   blob: {
     storeId:
       process.env.BLOB_STORE_ID ||
@@ -70,6 +72,7 @@ const config = {
       process.env.DB_TRUST_SERVER_CERTIFICATE,
       true
     ),
+    requestTimeoutMs: parseNumber(process.env.DB_REQUEST_TIMEOUT_MS, 120000),
   },
 };
 

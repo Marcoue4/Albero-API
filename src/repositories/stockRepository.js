@@ -1,16 +1,13 @@
-const { createRequest, sql } = require("../db");
+const config = require("../config");
+const { createRequest } = require("../db");
 
-function buildNumberParamBindings(prefix, values) {
-  return values.map((value, index) => ({
-    name: `${prefix}${index}`,
-    type: sql.Int,
-    value,
-  }));
-}
+let activeStockCache = {
+  expiresAt: 0,
+  stockByVariantId: null,
+  pending: null,
+};
 
-function buildInClause(prefix, values) {
-  return values.map((_value, index) => `@${prefix}${index}`).join(", ");
-}
+let sqlStockCacheWarningShown = false;
 
 function toVariantStockMap(records) {
   const stockByVariantId = new Map();
@@ -37,32 +34,146 @@ function toVariantStockMap(records) {
   return stockByVariantId;
 }
 
-async function getActiveVariantTotals() {
-  const result = await createRequest().then((request) =>
-    request.query(`
-      WITH active_variants AS (
-        SELECT DISTINCT VA_ID
-        FROM dbo.Articoli_Su_Sito_Plus
-        WHERE CANCELLATO = 0
-      )
+function setRequestTimeout(request) {
+  request.timeout = config.db.requestTimeoutMs;
+  return request;
+}
+
+function getRfidStockSelect(activeVariantsSql) {
+  return `
+    WITH active_variants AS (
+      ${activeVariantsSql}
+    ),
+    rfid_stock AS (
       SELECT
         av.VA_ID,
-        tr.TR_DES AS size_label,
-        COUNT(b.BI_BARCODE) AS qty,
-        MIN(tr.TR_ORDINE) AS size_order
+        LTRIM(RTRIM(r.TAGLIA)) AS size_label,
+        SUM(ISNULL(r.ESI_ETICHETTE, 0)) AS qty
       FROM active_variants av
-      LEFT JOIN dbo.Barcode b
-        ON b.BI_VA_ID = av.VA_ID
-       AND ISNULL(b.BI_CANCELLATO, 0) = 0
-      LEFT JOIN dbo.Taglie_righe tr
-        ON tr.TR_ID = b.BI_TR_ID
-       AND ISNULL(tr.TR_CANCELLATO, 0) = 0
-      GROUP BY av.VA_ID, tr.TR_DES
-      ORDER BY av.VA_ID, MIN(tr.TR_ORDINE), tr.TR_DES
-    `)
+      INNER JOIN dbo.BARCODE_ESISTENZA_RFID r
+        ON LTRIM(RTRIM(r.BRAND)) = av.brand
+       AND LTRIM(RTRIM(r.SIGLA_STAGIONE)) = av.season
+       AND LTRIM(RTRIM(r.CODICE_MODELLO)) = av.model_code
+       AND LTRIM(RTRIM(r.CODICE_VARIANTE)) = av.variant_code
+      GROUP BY av.VA_ID, LTRIM(RTRIM(r.TAGLIA))
+      HAVING SUM(ISNULL(r.ESI_ETICHETTE, 0)) > 0
+    )
+    SELECT
+      VA_ID,
+      size_label,
+      qty,
+      TRY_CONVERT(int, size_label) AS size_order
+    FROM rfid_stock
+    ORDER BY VA_ID, TRY_CONVERT(int, size_label), size_label
+  `;
+}
+
+function pickVariantStocks(stockByVariantId, variantIds) {
+  const picked = new Map();
+
+  for (const variantId of variantIds) {
+    picked.set(variantId, stockByVariantId.get(variantId) || {
+      totalQty: 0,
+      sizeQty: {},
+    });
+  }
+
+  return picked;
+}
+
+function warnSqlStockCacheFallback(error) {
+  if (sqlStockCacheWarningShown) {
+    return;
+  }
+
+  sqlStockCacheWarningShown = true;
+  console.warn(
+    `SQL stock cache unavailable; falling back to live RFID stock query. ${error.message}`
+  );
+}
+
+async function loadSqlStockCache() {
+  try {
+    const result = await createRequest().then((request) =>
+      setRequestTimeout(request).query(`
+        SELECT
+          VA_ID,
+          size_label,
+          qty
+        FROM dbo.Albero_Stock_Cache
+        WHERE qty > 0
+        ORDER BY VA_ID, TRY_CONVERT(int, size_label), size_label
+      `)
+    );
+
+    if (!result.recordset.length) {
+      throw new Error("dbo.Albero_Stock_Cache exists but has no positive stock rows");
+    }
+
+    return toVariantStockMap(result.recordset);
+  } catch (error) {
+    if (config.requireSqlStockCache) {
+      throw error;
+    }
+
+    warnSqlStockCacheFallback(error);
+    return null;
+  }
+}
+
+async function loadLiveRfidStock() {
+  const result = await createRequest().then((request) =>
+    setRequestTimeout(request).query(
+      getRfidStockSelect(`
+        SELECT DISTINCT
+          VA_ID,
+          LTRIM(RTRIM(TI_DES)) AS brand,
+          LTRIM(RTRIM(ST_SIGLA)) AS season,
+          LTRIM(RTRIM(MD_CODICE)) AS model_code,
+          LTRIM(RTRIM(VA_CODICE)) AS variant_code
+        FROM dbo.Articoli_Su_Sito_Plus
+        WHERE CANCELLATO = 0
+      `)
+    )
   );
 
   return toVariantStockMap(result.recordset);
+}
+
+async function loadActiveVariantTotals() {
+  const sqlStockCache = await loadSqlStockCache();
+
+  if (sqlStockCache) {
+    return sqlStockCache;
+  }
+
+  return loadLiveRfidStock();
+}
+
+async function getActiveVariantTotals() {
+  const now = Date.now();
+
+  if (activeStockCache.stockByVariantId && now < activeStockCache.expiresAt) {
+    return activeStockCache.stockByVariantId;
+  }
+
+  if (!activeStockCache.pending) {
+    activeStockCache.pending = loadActiveVariantTotals()
+      .then((stockByVariantId) => {
+        activeStockCache = {
+          expiresAt: Date.now() + config.stockCacheTtlMs,
+          stockByVariantId,
+          pending: null,
+        };
+        return stockByVariantId;
+      })
+      .catch((error) => {
+        activeStockCache.pending = null;
+        throw error;
+      });
+  }
+
+  return activeStockCache.pending;
 }
 
 async function getVariantStockByIds(variantIds) {
@@ -72,43 +183,19 @@ async function getVariantStockByIds(variantIds) {
     return new Map();
   }
 
-  const bindings = buildNumberParamBindings("variantId", uniqueIds);
-  const inClause = buildInClause("variantId", uniqueIds);
-  const request = await createRequest(bindings);
-  const result = await request.query(`
-    SELECT
-      v.VA_ID,
-      tr.TR_DES AS size_label,
-      COUNT(b.BI_BARCODE) AS qty,
-      MIN(tr.TR_ORDINE) AS size_order
-    FROM (
-      SELECT DISTINCT VA_ID
-      FROM dbo.Articoli_Su_Sito_Plus
-      WHERE CANCELLATO = 0
-        AND VA_ID IN (${inClause})
-    ) v
-    LEFT JOIN dbo.Barcode b
-      ON b.BI_VA_ID = v.VA_ID
-     AND ISNULL(b.BI_CANCELLATO, 0) = 0
-    LEFT JOIN dbo.Taglie_righe tr
-      ON tr.TR_ID = b.BI_TR_ID
-     AND ISNULL(tr.TR_CANCELLATO, 0) = 0
-    GROUP BY v.VA_ID, tr.TR_DES
-    ORDER BY v.VA_ID, MIN(tr.TR_ORDINE), tr.TR_DES
-  `);
+  const now = Date.now();
 
-  const stockMap = toVariantStockMap(result.recordset);
-
-  for (const variantId of uniqueIds) {
-    if (!stockMap.has(variantId)) {
-      stockMap.set(variantId, {
-        totalQty: 0,
-        sizeQty: {},
-      });
-    }
+  if (activeStockCache.stockByVariantId && now < activeStockCache.expiresAt) {
+    return pickVariantStocks(activeStockCache.stockByVariantId, uniqueIds);
   }
 
-  return stockMap;
+  if (activeStockCache.pending) {
+    const stockByVariantId = await activeStockCache.pending;
+    return pickVariantStocks(stockByVariantId, uniqueIds);
+  }
+
+  const stockByVariantId = await getActiveVariantTotals();
+  return pickVariantStocks(stockByVariantId, uniqueIds);
 }
 
 module.exports = {

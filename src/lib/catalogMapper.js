@@ -36,9 +36,118 @@ function pickFirstFeatureLines(rows, selectors) {
   return [];
 }
 
+function pickFirstValueWithSource(rows, selectors) {
+  for (const row of rows) {
+    for (const selector of selectors) {
+      const cleaned = cleanText(row[selector]);
+
+      if (cleaned) {
+        return {
+          value: cleaned,
+          source: selector,
+        };
+      }
+    }
+  }
+
+  return {
+    value: null,
+    source: null,
+  };
+}
+
+function toTitleCaseSegment(value) {
+  return String(value || "")
+    .split(/([\s\-\/]+)/)
+    .map((part) => {
+      if (!part || /^[\s\-\/]+$/.test(part)) {
+        return part;
+      }
+
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join("");
+}
+
+function normalizeDisplayName(value) {
+  const cleaned = cleanText(value);
+
+  if (!cleaned) {
+    return null;
+  }
+
+  const compact = cleaned.replace(/\s+/g, " ").trim();
+  if (!compact) {
+    return null;
+  }
+
+  if (compact !== compact.toLowerCase()) {
+    return compact;
+  }
+
+  const styleNameMatch = compact.match(/^([a-z])\s+([a-z0-9].*)$/);
+  if (styleNameMatch) {
+    return `${styleNameMatch[1].toUpperCase()}-${toTitleCaseSegment(styleNameMatch[2])}`;
+  }
+
+  return toTitleCaseSegment(compact);
+}
+
+function looksLikeRawStyleName(value) {
+  const cleaned = cleanText(value);
+
+  if (!cleaned) {
+    return false;
+  }
+
+  const compact = cleaned.replace(/\s+/g, " ").trim();
+  const tokenCount = compact.split(" ").filter(Boolean).length;
+
+  if (compact !== compact.toLowerCase()) {
+    return false;
+  }
+
+  if (compact.length <= 2 || tokenCount > 4) {
+    return false;
+  }
+
+  return /^[a-z0-9][a-z0-9\s\-'/]+$/i.test(compact);
+}
+
+function buildFallbackCatalogName(groupDescription, brand) {
+  const normalizedGroup = cleanText(groupDescription);
+  const normalizedBrand = cleanText(brand);
+
+  if (normalizedGroup && normalizedBrand) {
+    return `${normalizedGroup} ${normalizedBrand}`;
+  }
+
+  return normalizedGroup || normalizedBrand || null;
+}
+
 function minPositivePrice(values) {
   const positives = values.filter((value) => Number.isFinite(value) && value > 0);
   return positives.length ? Math.min(...positives) : 0;
+}
+
+function buildProductSizes(variants) {
+  const sizes = [];
+  const seen = new Set();
+
+  for (const variant of variants) {
+    for (const size of Object.keys(variant.sizeStock || {})) {
+      const normalized = String(size || "").trim();
+
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+
+      seen.add(normalized);
+      sizes.push(normalized);
+    }
+  }
+
+  return sizes;
 }
 
 function compareSeasonCodesDesc(left, right) {
@@ -81,15 +190,24 @@ function buildBaseProduct(rows) {
   const firstRow = rows[0];
   const modelId = Number(firstRow.MD_ID);
   const brand = cleanText(firstRow.TI_DES) || "Brand sconosciuto";
-  const name =
-    pickFirstValue(rows, [
+  const pickedName = pickFirstValueWithSource(rows, [
       "DESCRIZIONE_BREVE_IT",
       "DESCRIZIONE_BREVE",
       "DESCRIZIONE_SPECIALE_IT",
       "DESCRIZIONE_SPECIALE",
       "MD_DES",
       "GR_DES",
-    ]) || `Articolo ${modelId}`;
+    ]);
+  const rawName = pickedName.value || `Articolo ${modelId}`;
+  const fallbackCatalogName = buildFallbackCatalogName(firstRow.GR_DES, brand);
+  const shouldPreferFallbackCatalogName =
+    pickedName.source === "MD_DES" &&
+    looksLikeRawStyleName(rawName) &&
+    Boolean(fallbackCatalogName);
+  const name =
+    (shouldPreferFallbackCatalogName
+      ? normalizeDisplayName(fallbackCatalogName)
+      : normalizeDisplayName(rawName)) || `Articolo ${modelId}`;
   const descriptionShort = name;
   const featureLines = pickFirstFeatureLines(rows, ["SIZE_AND_FIT_IT", "SIZE_AND_FIT"]);
   const { category, subtype, subtypeKey } = inferCategorySubtype(
@@ -214,6 +332,8 @@ function buildProductSummary(product, stockByVariantId) {
     mergeVariantStock(variant, stockByVariantId.get(variant.variantId))
   );
   const totalStock = variants.reduce((sum, variant) => sum + variant.totalStock, 0);
+  const sizes = buildProductSizes(variants);
+  const primaryVariant = variants.find((variant) => variant.sku) || variants[0] || null;
 
   return {
     id: product.id,
@@ -225,12 +345,18 @@ function buildProductSummary(product, stockByVariantId) {
     subtype: product.subtype,
     seasonCode: product.seasonCode,
     seasonLabel: product.seasonLabel,
+    sku: primaryVariant?.sku || null,
     price: product.price,
     image: product.image,
+    descriptionShort: product.descriptionShort,
+    sizes,
     colors: variants.map((variant) => ({
       name: variant.color.name,
       hex: variant.color.hex,
       sku: variant.sku,
+      image: variant.images[0]?.url ?? null,
+      price: variant.price,
+      totalStock: variant.totalStock,
       availability: variant.availability,
     })),
     totalStock,

@@ -101,3 +101,37 @@ test("cleans feature lines and marks zero stock as unavailable", () => {
   assert.equal(summary.totalStock, 0);
   assert.equal(detail.variants[0].availability, "unavailable");
 });
+
+test("normalizes lowercase style names into cleaner storefront names", () => {
+  const rows = [
+    makeRow({
+      DESCRIZIONE_BREVE_IT: "h reymond",
+      DESCRIZIONE_BREVE: "h reymond",
+      DESCRIZIONE_SPECIALE_IT: null,
+      DESCRIZIONE_SPECIALE: null,
+      MD_DES: null,
+    }),
+  ];
+  const catalog = mapCatalogRowsToBaseCatalog(rows);
+
+  assert.equal(catalog.products[0].name, "H-Reymond");
+  assert.equal(catalog.products[0].descriptionShort, "H-Reymond");
+});
+
+test("prefers subtype plus brand when only a raw style name is available", () => {
+  const rows = [
+    makeRow({
+      TI_DES: "BOSS",
+      GR_DES: "Abito",
+      MD_DES: "h reymond",
+      DESCRIZIONE_BREVE_IT: null,
+      DESCRIZIONE_BREVE: null,
+      DESCRIZIONE_SPECIALE_IT: null,
+      DESCRIZIONE_SPECIALE: "",
+    }),
+  ];
+  const catalog = mapCatalogRowsToBaseCatalog(rows);
+
+  assert.equal(catalog.products[0].name, "Abito BOSS");
+  assert.equal(catalog.products[0].descriptionShort, "Abito BOSS");
+});

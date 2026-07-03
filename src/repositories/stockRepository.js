@@ -47,25 +47,22 @@ async function getActiveVariantTotals() {
       )
       SELECT
         av.VA_ID,
-        COUNT(b.BI_BARCODE) AS total_qty
+        tr.TR_DES AS size_label,
+        COUNT(b.BI_BARCODE) AS qty,
+        MIN(tr.TR_ORDINE) AS size_order
       FROM active_variants av
       LEFT JOIN dbo.Barcode b
         ON b.BI_VA_ID = av.VA_ID
        AND ISNULL(b.BI_CANCELLATO, 0) = 0
-      GROUP BY av.VA_ID
+      LEFT JOIN dbo.Taglie_righe tr
+        ON tr.TR_ID = b.BI_TR_ID
+       AND ISNULL(tr.TR_CANCELLATO, 0) = 0
+      GROUP BY av.VA_ID, tr.TR_DES
+      ORDER BY av.VA_ID, MIN(tr.TR_ORDINE), tr.TR_DES
     `)
   );
 
-  const totals = new Map();
-
-  for (const record of result.recordset) {
-    totals.set(Number(record.VA_ID), {
-      totalQty: Number(record.total_qty || 0),
-      sizeQty: {},
-    });
-  }
-
-  return totals;
+  return toVariantStockMap(result.recordset);
 }
 
 async function getVariantStockByIds(variantIds) {

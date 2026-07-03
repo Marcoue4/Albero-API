@@ -1,9 +1,10 @@
 const cors = require("cors");
 const express = require("express");
 const config = require("./config");
-const { closePool, getTableColumns, getTablePreview, listTables, pingDatabase } = require("./db");
+const { closePool, getTableColumns, getTablePreview, listTables, pingDatabase, runQuery } = require("./db");
 const { HttpError } = require("./errors/httpError");
 const { createCatalogService } = require("./services/catalogService");
+const { getStockRuntimeCacheStatus } = require("./repositories/stockRepository");
 
 const NO_STORE_HEADER = "no-store";
 
@@ -26,6 +27,84 @@ function parseCsvQueryValue(value) {
     .filter(Boolean);
 }
 
+async function getSqlStockCacheHealth() {
+  const cacheResult = await runQuery(`
+    IF OBJECT_ID(N'dbo.Albero_Stock_Cache', N'U') IS NULL
+    BEGIN
+      SELECT
+        0 AS cache_exists,
+        0 AS rows,
+        CAST(NULL AS datetime2) AS min_refreshed_at,
+        CAST(NULL AS datetime2) AS max_refreshed_at,
+        CAST(NULL AS datetime) AS latest_source_movement_at,
+        CAST(NULL AS bigint) AS age_ms
+    END
+    ELSE
+    BEGIN
+      SELECT
+        1 AS cache_exists,
+        COUNT(VA_ID) AS rows,
+        MIN(refreshed_at) AS min_refreshed_at,
+        MAX(refreshed_at) AS max_refreshed_at,
+        MAX(source_last_movement_at) AS latest_source_movement_at,
+        DATEDIFF_BIG(millisecond, MAX(refreshed_at), SYSDATETIME()) AS age_ms
+      FROM dbo.Albero_Stock_Cache
+    END
+  `);
+  const logResult = await runQuery(`
+    IF OBJECT_ID(N'dbo.Albero_Stock_Cache_Refresh_Log', N'U') IS NULL
+    BEGIN
+      SELECT
+        CAST(NULL AS bigint) AS id,
+        CAST(NULL AS datetime2) AS started_at,
+        CAST(NULL AS datetime2) AS finished_at,
+        CAST(NULL AS int) AS rows_refreshed,
+        CAST(NULL AS varchar(20)) AS status,
+        CAST(NULL AS nvarchar(4000)) AS error_message
+    END
+    ELSE
+    BEGIN
+      SELECT TOP 1
+        id,
+        started_at,
+        finished_at,
+        rows_refreshed,
+        status,
+        error_message
+      FROM dbo.Albero_Stock_Cache_Refresh_Log
+      ORDER BY id DESC
+    END
+  `);
+  const cache = cacheResult.recordset[0] || {};
+  const lastRefresh = logResult.recordset[0] || null;
+  const refreshedAt = cache.max_refreshed_at ? new Date(cache.max_refreshed_at) : null;
+  const ageMs = cache.age_ms === null || cache.age_ms === undefined ? null : Number(cache.age_ms);
+
+  return {
+    exists: Boolean(cache.cache_exists),
+    rows: Number(cache.rows || 0),
+    refreshedAt: refreshedAt ? refreshedAt.toISOString() : null,
+    ageMs,
+    latestSourceMovementAt: cache.latest_source_movement_at
+      ? new Date(cache.latest_source_movement_at).toISOString()
+      : null,
+    lastRefresh: lastRefresh?.id
+      ? {
+          id: Number(lastRefresh.id),
+          startedAt: lastRefresh.started_at
+            ? new Date(lastRefresh.started_at).toISOString()
+            : null,
+          finishedAt: lastRefresh.finished_at
+            ? new Date(lastRefresh.finished_at).toISOString()
+            : null,
+          rowsRefreshed: lastRefresh.rows_refreshed,
+          status: lastRefresh.status,
+          errorMessage: lastRefresh.error_message,
+        }
+      : null,
+  };
+}
+
 function createApp(options = {}) {
   const app = express();
   const catalogService = options.catalogService || createCatalogService();
@@ -43,6 +122,7 @@ function createApp(options = {}) {
       status: "ok",
       routes: [
         "GET /health",
+        "GET /health/cache",
         "GET /health/db",
         "GET /api/products",
         "GET /api/products/:productId",
@@ -74,6 +154,28 @@ function createApp(options = {}) {
       res.json({
         status: "ok",
         database: dbStatus,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/health/cache", async (_req, res, next) => {
+    try {
+      const sqlStockCache = await getSqlStockCacheHealth();
+
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json({
+        status:
+          sqlStockCache.exists &&
+          sqlStockCache.rows > 0 &&
+          sqlStockCache.lastRefresh?.status !== "failed"
+            ? "ok"
+            : "warning",
+        checkedAt: new Date().toISOString(),
+        sqlStockCache,
+        apiMemoryStockCache: getStockRuntimeCacheStatus(),
+        catalogCacheTtlMs: config.catalogCacheTtlMs,
       });
     } catch (error) {
       next(error);

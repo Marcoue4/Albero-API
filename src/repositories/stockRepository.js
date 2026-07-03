@@ -198,7 +198,24 @@ async function getVariantStockByIds(variantIds) {
   return pickVariantStocks(stockByVariantId, uniqueIds);
 }
 
+function getStockRuntimeCacheStatus() {
+  const now = Date.now();
+
+  return {
+    hasMemoryCache: Boolean(activeStockCache.stockByVariantId),
+    isRefreshInFlight: Boolean(activeStockCache.pending),
+    expiresAt: activeStockCache.expiresAt
+      ? new Date(activeStockCache.expiresAt).toISOString()
+      : null,
+    ttlMs: config.stockCacheTtlMs,
+    remainingTtlMs: activeStockCache.expiresAt
+      ? Math.max(0, activeStockCache.expiresAt - now)
+      : 0,
+  };
+}
+
 module.exports = {
   getActiveVariantTotals,
+  getStockRuntimeCacheStatus,
   getVariantStockByIds,
 };

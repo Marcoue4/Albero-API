@@ -79,7 +79,20 @@ BEGIN
     ON dbo.Albero_Admin_Audit_Log(created_at DESC);
 END
 
+IF OBJECT_ID(N'dbo.Albero_Runtime_Documents', N'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.Albero_Runtime_Documents (
+    doc_key nvarchar(120) NOT NULL,
+    document_json nvarchar(max) NOT NULL,
+    revision nvarchar(80) NULL,
+    updated_at datetime2(3) NOT NULL CONSTRAINT DF_Albero_Runtime_Documents_updated_at DEFAULT SYSUTCDATETIME(),
+    CONSTRAINT PK_Albero_Runtime_Documents PRIMARY KEY CLUSTERED (doc_key),
+    CONSTRAINT CK_Albero_Runtime_Documents_json CHECK (ISJSON(document_json) = 1)
+  );
+END
+
 -- If the installer is run by a different SQL login, grant these to the API login:
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.Albero_Discount_Rules TO [your_api_user];
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.Albero_Coupon_Redemptions TO [your_api_user];
 -- GRANT INSERT ON dbo.Albero_Admin_Audit_Log TO [your_api_user];
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.Albero_Runtime_Documents TO [your_api_user];

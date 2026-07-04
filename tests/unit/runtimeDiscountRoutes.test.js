@@ -53,9 +53,37 @@ function makeRepository(overrides = {}) {
   };
 }
 
+function makeDocumentRepository(overrides = {}) {
+  return {
+    async readRuntimeDocument(key) {
+      return {
+        key,
+        document: null,
+        revision: null,
+        updatedAt: null,
+      };
+    },
+    async writeRuntimeDocument(key, document) {
+      return {
+        key,
+        document,
+        revision: document?.revision || "doc-rev",
+        updatedAt: "2026-07-04T10:00:00.000Z",
+      };
+    },
+    async getRuntimeDocumentsHealth() {
+      return { storage: "sql-server", documents: [] };
+    },
+    ...overrides,
+  };
+}
+
 test("runtime discount routes require the shared secret", async () => {
   const server = await createHttpTestServer(
-    createApp({ runtimeDiscountRepository: makeRepository() })
+    createApp({
+      runtimeDiscountRepository: makeRepository(),
+      runtimeDocumentRepository: makeDocumentRepository(),
+    })
   );
 
   try {
@@ -78,6 +106,7 @@ test("GET /api/runtime/discounts/rules returns the repository document", async (
           };
         },
       }),
+      runtimeDocumentRepository: makeDocumentRepository(),
     })
   );
 
@@ -106,6 +135,7 @@ test("PUT /api/runtime/discounts/rules maps revision conflicts to 409", async ()
           throw error;
         },
       }),
+      runtimeDocumentRepository: makeDocumentRepository(),
     })
   );
 
@@ -129,7 +159,10 @@ test("PUT /api/runtime/discounts/rules maps revision conflicts to 409", async ()
 
 test("POST /api/runtime/discounts/coupon-redemptions records idempotent usage", async () => {
   const server = await createHttpTestServer(
-    createApp({ runtimeDiscountRepository: makeRepository() })
+    createApp({
+      runtimeDiscountRepository: makeRepository(),
+      runtimeDocumentRepository: makeDocumentRepository(),
+    })
   );
 
   try {
@@ -151,6 +184,73 @@ test("POST /api/runtime/discounts/coupon-redemptions records idempotent usage", 
     assert.equal(response.status, 200);
     assert.equal(payload.record.code, "SAVE10");
     assert.equal(payload.record.ruleId, "coupon-1");
+  } finally {
+    await server.close();
+  }
+});
+
+test("GET /api/runtime/documents/:key returns runtime documents", async () => {
+  const server = await createHttpTestServer(
+    createApp({
+      runtimeDiscountRepository: makeRepository(),
+      runtimeDocumentRepository: makeDocumentRepository({
+        async readRuntimeDocument(key) {
+          return {
+            key,
+            document: { currentSeason: "261", revision: "season-rev" },
+            revision: "season-rev",
+            updatedAt: "2026-07-04T10:00:00.000Z",
+          };
+        },
+      }),
+    })
+  );
+
+  try {
+    const response = await fetch(`${server.baseUrl}/api/runtime/documents/catalog-season`, {
+      headers: { "x-albero-runtime-secret": "test-runtime-secret" },
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.key, "catalog-season");
+    assert.equal(payload.document.currentSeason, "261");
+  } finally {
+    await server.close();
+  }
+});
+
+test("PUT /api/runtime/documents/:key maps document conflicts to 409", async () => {
+  const server = await createHttpTestServer(
+    createApp({
+      runtimeDiscountRepository: makeRepository(),
+      runtimeDocumentRepository: makeDocumentRepository({
+        async writeRuntimeDocument() {
+          const error = new Error("RUNTIME_DOCUMENT_REVISION_CONFLICT");
+          error.code = "RUNTIME_DOCUMENT_REVISION_CONFLICT";
+          error.currentRevision = "current-doc-rev";
+          throw error;
+        },
+      }),
+    })
+  );
+
+  try {
+    const response = await fetch(`${server.baseUrl}/api/runtime/documents/home-featured`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-albero-runtime-secret": "test-runtime-secret",
+      },
+      body: JSON.stringify({
+        document: { productIds: ["mdl_1"], revision: "next-doc-rev" },
+        expectedRevision: "stale",
+      }),
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 409);
+    assert.equal(payload.currentRevision, "current-doc-rev");
   } finally {
     await server.close();
   }

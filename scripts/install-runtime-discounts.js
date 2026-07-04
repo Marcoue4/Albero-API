@@ -28,6 +28,7 @@ async function grantApiPermissions(userName) {
   await runBatch(`GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.Albero_Discount_Rules TO ${quotedUser}`);
   await runBatch(`GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.Albero_Coupon_Redemptions TO ${quotedUser}`);
   await runBatch(`GRANT INSERT ON dbo.Albero_Admin_Audit_Log TO ${quotedUser}`);
+  await runBatch(`GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.Albero_Runtime_Documents TO ${quotedUser}`);
 }
 
 async function main() {

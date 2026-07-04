@@ -7,9 +7,40 @@ const {
   recordCouponRedemption,
   writeDiscountRules,
 } = require("../src/repositories/runtimeDiscountRepository");
+const {
+  readRuntimeDocument,
+  writeRuntimeDocument,
+} = require("../src/repositories/runtimeDocumentRepository");
 
 const RULES_BLOB_PATH = "discounts/rules.json";
 const REDEMPTIONS_BLOB_PATH = "discounts/coupon-redemptions.json";
+const RUNTIME_DOCUMENT_SOURCES = [
+  {
+    key: "catalog-season",
+    blobPath: "catalog-season/data.json",
+    fileEnv: "CATALOG_SEASON_JSON_PATH",
+  },
+  {
+    key: "home-featured",
+    blobPath: "homepage/featured-products.json",
+    fileEnv: "HOME_FEATURED_JSON_PATH",
+  },
+  {
+    key: "home-categories",
+    blobPath: "homepage/category-showcase.json",
+    fileEnv: "HOME_CATEGORIES_JSON_PATH",
+  },
+  {
+    key: "inventory-overrides",
+    blobPath: "inventory/overrides.json",
+    fileEnv: "INVENTORY_OVERRIDES_JSON_PATH",
+  },
+  {
+    key: "curated-outfits",
+    blobPath: "curated-outfits/data.json",
+    fileEnv: "CURATED_OUTFITS_JSON_PATH",
+  },
+];
 
 function getBlobDirectUrl(pathname) {
   const token = config.blob.readWriteToken || "";
@@ -81,6 +112,26 @@ function normalizeRedemptions(value) {
   });
 }
 
+function chooseRuntimeDocument(blobValue, fileValue) {
+  if (blobValue === null || blobValue === undefined) return fileValue ?? null;
+  if (fileValue === null || fileValue === undefined) return blobValue;
+
+  if (
+    blobValue &&
+    fileValue &&
+    typeof blobValue === "object" &&
+    typeof fileValue === "object" &&
+    typeof blobValue.updatedAt === "string" &&
+    typeof fileValue.updatedAt === "string"
+  ) {
+    return new Date(blobValue.updatedAt).getTime() >= new Date(fileValue.updatedAt).getTime()
+      ? blobValue
+      : fileValue;
+  }
+
+  return blobValue;
+}
+
 async function main() {
   const force = process.argv.includes("--force");
   const rulesFile = process.env.DISCOUNT_RULES_JSON_PATH
@@ -123,12 +174,48 @@ async function main() {
     recordedRedemptions += 1;
   }
 
+  const migratedDocuments = [];
+  for (const source of RUNTIME_DOCUMENT_SOURCES) {
+    const currentDoc = await readRuntimeDocument(source.key);
+    if (currentDoc.document !== null && !force) {
+      migratedDocuments.push({ key: source.key, skipped: true });
+      continue;
+    }
+
+    const [blobValue, fileValue] = await Promise.all([
+      readPublicBlobJson(source.blobPath).catch((error) => {
+        console.warn(error.message);
+        return null;
+      }),
+      Promise.resolve(
+        process.env[source.fileEnv]
+          ? readJsonFile(path.resolve(process.env[source.fileEnv]))
+          : null
+      ),
+    ]);
+    const document = chooseRuntimeDocument(blobValue, fileValue);
+    if (document === null || document === undefined) {
+      migratedDocuments.push({ key: source.key, skipped: true });
+      continue;
+    }
+
+    const saved = await writeRuntimeDocument(source.key, document, {
+      expectedRevision: force ? currentDoc.revision || undefined : undefined,
+    });
+    migratedDocuments.push({
+      key: source.key,
+      skipped: false,
+      revision: saved.revision,
+    });
+  }
+
   console.log(
     JSON.stringify(
       {
         ok: true,
         rules: written.rules.length,
         redemptions: recordedRedemptions,
+        documents: migratedDocuments,
         revision: written.revision,
         forced: force,
       },

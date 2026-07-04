@@ -5,6 +5,7 @@ const { closePool, getTableColumns, getTablePreview, listTables, pingDatabase, r
 const { HttpError } = require("./errors/httpError");
 const { createCatalogService } = require("./services/catalogService");
 const defaultRuntimeDiscountRepository = require("./repositories/runtimeDiscountRepository");
+const defaultRuntimeDocumentRepository = require("./repositories/runtimeDocumentRepository");
 const { getStockRuntimeCacheStatus } = require("./repositories/stockRepository");
 
 const NO_STORE_HEADER = "no-store";
@@ -133,6 +134,8 @@ function createApp(options = {}) {
   const catalogService = options.catalogService || createCatalogService();
   const runtimeDiscountRepository =
     options.runtimeDiscountRepository || defaultRuntimeDiscountRepository;
+  const runtimeDocumentRepository =
+    options.runtimeDocumentRepository || defaultRuntimeDocumentRepository;
 
   app.use(
     cors({
@@ -158,6 +161,8 @@ function createApp(options = {}) {
         "GET /api/runtime/discounts/coupon-usage",
         "POST /api/runtime/discounts/coupon-redemptions",
         "GET /api/runtime/discounts/health",
+        "GET /api/runtime/documents/:key",
+        "PUT /api/runtime/documents/:key",
         "GET /api/meta/tables",
         "GET /api/meta/tables/:schema/:table/columns",
         "GET /api/meta/tables/:schema/:table/rows?limit=20",
@@ -348,14 +353,64 @@ function createApp(options = {}) {
     if (!requireRuntimeDataAuth(req, res)) return;
 
     try {
-      const health = await runtimeDiscountRepository.getRuntimeDiscountHealth();
+      const [discountHealth, documentsHealth] = await Promise.all([
+        runtimeDiscountRepository.getRuntimeDiscountHealth(),
+        runtimeDocumentRepository.getRuntimeDocumentsHealth(),
+      ]);
       res.set("Cache-Control", NO_STORE_HEADER);
       res.json({
         status: "ok",
         checkedAt: new Date().toISOString(),
-        ...health,
+        ...discountHealth,
+        runtimeDocuments: documentsHealth.documents,
       });
     } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/runtime/documents/:key", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    try {
+      const result = await runtimeDocumentRepository.readRuntimeDocument(req.params.key);
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/runtime/documents/:key", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    try {
+      if (!("document" in (req.body || {}))) {
+        res.status(400).json({ error: "document is required." });
+        return;
+      }
+
+      const result = await runtimeDocumentRepository.writeRuntimeDocument(
+        req.params.key,
+        req.body.document,
+        {
+          expectedRevision:
+            typeof req.body.expectedRevision === "string"
+              ? req.body.expectedRevision
+              : undefined,
+        }
+      );
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json(result);
+    } catch (error) {
+      if (error.code === "RUNTIME_DOCUMENT_REVISION_CONFLICT") {
+        res.status(409).json({
+          error: "Runtime document revision conflict.",
+          currentRevision: error.currentRevision,
+        });
+        return;
+      }
+
       next(error);
     }
   });

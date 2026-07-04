@@ -4,6 +4,7 @@ const config = require("./config");
 const { closePool, getTableColumns, getTablePreview, listTables, pingDatabase, runQuery } = require("./db");
 const { HttpError } = require("./errors/httpError");
 const { createCatalogService } = require("./services/catalogService");
+const defaultRuntimeDiscountRepository = require("./repositories/runtimeDiscountRepository");
 const { getStockRuntimeCacheStatus } = require("./repositories/stockRepository");
 
 const NO_STORE_HEADER = "no-store";
@@ -25,6 +26,28 @@ function parseCsvQueryValue(value) {
     .flatMap((entry) => String(entry || "").split(","))
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function isAuthorizedRuntimeDataRequest(req) {
+  if (!config.runtimeDataSecret) {
+    return false;
+  }
+
+  const provided =
+    req.headers["x-albero-runtime-secret"] ||
+    req.headers["x-api-runtime-secret"] ||
+    req.headers["x-admin-secret"];
+
+  return String(provided || "") === config.runtimeDataSecret;
+}
+
+function requireRuntimeDataAuth(req, res) {
+  if (isAuthorizedRuntimeDataRequest(req)) {
+    return true;
+  }
+
+  res.status(401).json({ error: "Unauthorized runtime data request." });
+  return false;
 }
 
 async function getSqlStockCacheHealth() {
@@ -108,6 +131,8 @@ async function getSqlStockCacheHealth() {
 function createApp(options = {}) {
   const app = express();
   const catalogService = options.catalogService || createCatalogService();
+  const runtimeDiscountRepository =
+    options.runtimeDiscountRepository || defaultRuntimeDiscountRepository;
 
   app.use(
     cors({
@@ -128,6 +153,11 @@ function createApp(options = {}) {
         "GET /api/products/:productId",
         "GET /api/catalog/facets",
         "POST /api/stock/lookup",
+        "GET /api/runtime/discounts/rules",
+        "PUT /api/runtime/discounts/rules",
+        "GET /api/runtime/discounts/coupon-usage",
+        "POST /api/runtime/discounts/coupon-redemptions",
+        "GET /api/runtime/discounts/health",
         "GET /api/meta/tables",
         "GET /api/meta/tables/:schema/:table/columns",
         "GET /api/meta/tables/:schema/:table/rows?limit=20",
@@ -230,6 +260,101 @@ function createApp(options = {}) {
 
       res.set("Cache-Control", NO_STORE_HEADER);
       res.json({ stocks });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/runtime/discounts/rules", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    try {
+      const document = await runtimeDiscountRepository.readDiscountRules();
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json(document);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/runtime/discounts/rules", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    try {
+      if (!Array.isArray(req.body?.rules)) {
+        res.status(400).json({ error: "rules is required." });
+        return;
+      }
+
+      const document = await runtimeDiscountRepository.writeDiscountRules(req.body.rules, {
+        expectedRevision:
+          typeof req.body.expectedRevision === "string"
+            ? req.body.expectedRevision
+            : undefined,
+      });
+
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json(document);
+    } catch (error) {
+      if (error.code === "DISCOUNT_RULES_REVISION_CONFLICT") {
+        res.status(409).json({
+          error: "Discount rules revision conflict.",
+          currentRevision: error.currentRevision,
+        });
+        return;
+      }
+
+      next(error);
+    }
+  });
+
+  app.get("/api/runtime/discounts/coupon-redemptions", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    try {
+      const records = await runtimeDiscountRepository.readCouponRedemptions();
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json({ records });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/runtime/discounts/coupon-usage", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    try {
+      const usageByRuleId = await runtimeDiscountRepository.getCouponUsageCounts();
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json({ usageByRuleId });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/runtime/discounts/coupon-redemptions", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    try {
+      const record = await runtimeDiscountRepository.recordCouponRedemption(req.body || {});
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json({ record });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/runtime/discounts/health", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    try {
+      const health = await runtimeDiscountRepository.getRuntimeDiscountHealth();
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json({
+        status: "ok",
+        checkedAt: new Date().toISOString(),
+        ...health,
+      });
     } catch (error) {
       next(error);
     }

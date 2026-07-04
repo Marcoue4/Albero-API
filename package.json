@@ -8,6 +8,8 @@
     "dev": "node --watch src/server.js",
     "check-db": "node scripts/check-db.js",
     "install-stock-cache": "node scripts/install-stock-cache.js",
+    "install-runtime-discounts": "node scripts/install-runtime-discounts.js",
+    "migrate-runtime-discounts": "node scripts/migrate-runtime-discounts.js",
     "refresh-stock-cache": "node scripts/refresh-stock-cache.js",
     "sync-images": "node scripts/sync-images.js",
     "test": "node --test \"tests/**/*.test.js\"",

@@ -134,6 +134,15 @@ For production, install the SQL-side stock cache and refresh it on a schedule:
 
 When `dbo.Albero_Stock_Cache` exists and has rows, the API reads stock from that table. Until then it falls back to the live RFID aggregation. Set `REQUIRE_SQL_STOCK_CACHE=true` in production if a missing cache should fail loudly.
 
+## Runtime Discount Data
+
+Discount rules and coupon redemptions can be stored in the same SQL Server used by this API.
+
+1. Set the same `ALBERO_API_RUNTIME_SECRET` value on `albero-api` and `albero-site`.
+2. Run `npm run install-runtime-discounts` to create `dbo.Albero_Discount_Rules`, `dbo.Albero_Coupon_Redemptions`, and `dbo.Albero_Admin_Audit_Log`.
+3. Run `npm run migrate-runtime-discounts` once to import the existing Blob JSON discount data. Use `-- --force` only when intentionally replacing existing DB rules.
+4. Keep Blob for images/files; runtime discount reads and writes should go through the API routes under `/api/runtime/discounts/*`.
+
 ## Notes
 
 - Product ids use `mdl_<MD_ID>`.

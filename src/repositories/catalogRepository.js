@@ -1,7 +1,7 @@
 const config = require("../config");
 const { runQuery } = require("../db");
 const { IMAGE_COLUMNS } = require("../lib/imageResolver");
-const { buildStoreLocationPredicateSql } = require("../lib/storeLocationScope");
+const { formatStoreLocationScopeValue } = require("../lib/storeLocationScope");
 
 const CATALOG_COLUMNS = [
   "MD_ID",
@@ -28,43 +28,62 @@ const CATALOG_COLUMNS = [
   ...IMAGE_COLUMNS,
 ];
 
-function buildActiveCatalogQuery(allowedStoreNames = config.storefrontAllowedStoreNames) {
-  const storePredicate = buildStoreLocationPredicateSql("r.NE_DES", allowedStoreNames);
+function quoteSqlUnicodeString(value) {
+  return `N'${String(value || "").replace(/'/g, "''")}'`;
+}
 
-  if (!storePredicate) {
-    return `
-      SELECT
-        ${CATALOG_COLUMNS.join(",\n        ")}
-      FROM dbo.Articoli_Su_Sito_Plus
-      WHERE CANCELLATO = 0
-      ORDER BY MD_ID, VA_ID
-    `;
+function buildStoreScopeClause(allowedStoreNames = config.storefrontAllowedStoreNames) {
+  const storeScope = formatStoreLocationScopeValue(allowedStoreNames);
+
+  if (!storeScope) {
+    return "ac.store_scope IS NULL";
   }
+
+  return `ac.store_scope = ${quoteSqlUnicodeString(storeScope)}`;
+}
+
+function buildActiveCatalogQuery(allowedStoreNames = config.storefrontAllowedStoreNames) {
+  const storeScopeClause = buildStoreScopeClause(allowedStoreNames);
 
   return `
     WITH scoped_variants AS (
       SELECT DISTINCT
-        UPPER(LTRIM(RTRIM(r.BRAND))) AS brand,
-        UPPER(LTRIM(RTRIM(r.SIGLA_STAGIONE))) AS season,
-        UPPER(LTRIM(RTRIM(r.CODICE_MODELLO))) AS model_code,
-        UPPER(LTRIM(RTRIM(r.CODICE_VARIANTE))) AS variant_code
-      FROM dbo.BARCODE_ESISTENZA_RFID r
-      WHERE ${storePredicate}
+        ac.VA_ID
+      FROM dbo.Albero_Stock_Cache ac
+      WHERE ac.qty > 0
+        AND ${storeScopeClause}
     )
     SELECT
       ${CATALOG_COLUMNS.join(",\n      ")}
     FROM dbo.Articoli_Su_Sito_Plus a
     INNER JOIN scoped_variants sv
-      ON sv.brand = UPPER(LTRIM(RTRIM(a.TI_DES)))
-     AND sv.season = UPPER(LTRIM(RTRIM(a.ST_SIGLA)))
-     AND sv.model_code = UPPER(LTRIM(RTRIM(a.MD_CODICE)))
-     AND sv.variant_code = UPPER(LTRIM(RTRIM(a.VA_CODICE)))
+      ON sv.VA_ID = a.VA_ID
     WHERE a.CANCELLATO = 0
     ORDER BY a.MD_ID, a.VA_ID
   `;
 }
 
+async function ensureScopedStockCacheAvailable() {
+  const storeScopeClause = buildStoreScopeClause();
+  const result = await runQuery(`
+    SELECT TOP 1 1 AS has_rows
+    FROM dbo.Albero_Stock_Cache ac
+    WHERE ac.qty > 0
+      AND ${storeScopeClause}
+  `);
+
+  if (!result.recordset.length) {
+    throw new Error(
+      `dbo.Albero_Stock_Cache has no positive catalog rows for store scope ${config.storefrontAllowedStoreScope || "<all stores>"}`
+    );
+  }
+}
+
 async function getActiveCatalogRows() {
+  if (config.requireSqlStockCache) {
+    await ensureScopedStockCacheAvailable();
+  }
+
   const result = await runQuery(buildActiveCatalogQuery());
 
   return result.recordset;
@@ -72,5 +91,6 @@ async function getActiveCatalogRows() {
 
 module.exports = {
   buildActiveCatalogQuery,
+  buildStoreScopeClause,
   getActiveCatalogRows,
 };

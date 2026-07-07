@@ -8,6 +8,11 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
 }
 
+function toPositiveNumber(value) {
+  const normalized = toNumber(value, 0);
+  return normalized > 0 ? normalized : null;
+}
+
 function pickFirstValue(rows, selectors) {
   for (const row of rows) {
     for (const selector of selectors) {
@@ -130,6 +135,29 @@ function minPositivePrice(values) {
   return positives.length ? Math.min(...positives) : 0;
 }
 
+function resolveVariantPricing(row) {
+  const regularPrice =
+    toPositiveNumber(row.LI_Prezzo_VEN_ITA) ??
+    toPositiveNumber(row.PREZZO_VENDITA) ??
+    toPositiveNumber(row.VA_PREZZO_VEN) ??
+    0;
+  const salePriceCandidate =
+    toPositiveNumber(row.LI_Prezzo_SAL_ITA) ??
+    toPositiveNumber(row.VA_PREZZO_SAL);
+  const saleCampaignActive =
+    Number.isFinite(regularPrice) &&
+    regularPrice > 0 &&
+    Number.isFinite(salePriceCandidate) &&
+    salePriceCandidate > 0 &&
+    salePriceCandidate < regularPrice;
+
+  return {
+    price: saleCampaignActive ? salePriceCandidate : regularPrice,
+    originalPrice: saleCampaignActive ? regularPrice : null,
+    saleCampaignActive,
+  };
+}
+
 function buildProductSizes(variants) {
   const sizes = [];
   const seen = new Set();
@@ -170,6 +198,7 @@ function buildVariantBase(row) {
     variantCode ||
     "Variante";
   const images = resolveImageAssetsFromRow(row);
+  const pricing = resolveVariantPricing(row);
 
   return {
     id: buildVariantId(row.VA_ID),
@@ -182,7 +211,9 @@ function buildVariantBase(row) {
       hex: colorToHex(colorName),
     },
     images,
-    price: toNumber(row.VA_PREZZO_VEN, 0),
+    price: pricing.price,
+    originalPrice: pricing.originalPrice,
+    saleCampaignActive: pricing.saleCampaignActive,
   };
 }
 
@@ -220,6 +251,12 @@ function buildBaseProduct(rows) {
   const seasonCode = cleanText(firstRow.ST_SIGLA) || null;
   const seasonLabel = cleanText(firstRow.ST_DES) || null;
   const modelCode = normalizeCode(firstRow.MD_CODICE);
+  const saleVariants = variants.filter(
+    (variant) =>
+      variant.saleCampaignActive &&
+      Number.isFinite(variant.originalPrice) &&
+      variant.originalPrice > 0
+  );
   const product = {
     id: buildProductId(modelId),
     modelId,
@@ -237,6 +274,10 @@ function buildBaseProduct(rows) {
     images,
     image: images[0]?.url ?? null,
     price: minPositivePrice(variants.map((variant) => variant.price)),
+    originalPrice: saleVariants.length
+      ? minPositivePrice(saleVariants.map((variant) => variant.originalPrice))
+      : null,
+    saleCampaignActive: saleVariants.length > 0,
     variants,
   };
 
@@ -321,6 +362,8 @@ function mergeVariantStock(variant, stock) {
     },
     images: variant.images,
     price: variant.price,
+    originalPrice: variant.originalPrice,
+    saleCampaignActive: variant.saleCampaignActive,
     totalStock: totalQty,
     sizeStock,
     availability: availabilityFromQty(totalQty),
@@ -347,6 +390,8 @@ function buildProductSummary(product, stockByVariantId) {
     seasonLabel: product.seasonLabel,
     sku: primaryVariant?.sku || null,
     price: product.price,
+    originalPrice: product.originalPrice,
+    saleCampaignActive: product.saleCampaignActive,
     image: product.image,
     descriptionShort: product.descriptionShort,
     sizes,
@@ -356,6 +401,8 @@ function buildProductSummary(product, stockByVariantId) {
       sku: variant.sku,
       image: variant.images[0]?.url ?? null,
       price: variant.price,
+      originalPrice: variant.originalPrice,
+      saleCampaignActive: variant.saleCampaignActive,
       totalStock: variant.totalStock,
       availability: variant.availability,
     })),

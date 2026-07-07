@@ -102,6 +102,31 @@ test("cleans feature lines and marks zero stock as unavailable", () => {
   assert.equal(detail.variants[0].availability, "unavailable");
 });
 
+test("uses DB sale pricing only when the row is part of a sale campaign", () => {
+  const rows = [
+    makeRow({
+      VA_PREZZO_VEN: 199,
+      LI_Prezzo_VEN_ITA: 199,
+      LI_Prezzo_SAL_ITA: 99.5,
+    }),
+  ];
+  const catalog = mapCatalogRowsToBaseCatalog(rows);
+  const baseProduct = catalog.products[0];
+  const stock = new Map([[200, { totalQty: 2, sizeQty: { M: 2 } }]]);
+  const summary = buildProductSummary(baseProduct, stock);
+  const detail = buildProductDetail(baseProduct, stock);
+
+  assert.equal(baseProduct.price, 99.5);
+  assert.equal(baseProduct.originalPrice, 199);
+  assert.equal(baseProduct.saleCampaignActive, true);
+  assert.equal(summary.price, 99.5);
+  assert.equal(summary.originalPrice, 199);
+  assert.equal(summary.saleCampaignActive, true);
+  assert.equal(detail.variants[0].price, 99.5);
+  assert.equal(detail.variants[0].originalPrice, 199);
+  assert.equal(detail.variants[0].saleCampaignActive, true);
+});
+
 test("normalizes lowercase style names into cleaner storefront names", () => {
   const rows = [
     makeRow({

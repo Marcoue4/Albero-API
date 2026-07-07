@@ -18,6 +18,7 @@ test("buildActiveCatalogQuery scopes catalog rows through Albero_Stock_Cache by 
 
   assert.match(query, /FROM dbo\.Albero_Stock_Cache ac/);
   assert.match(query, /SELECT DISTINCT\s+ac\.VA_ID/);
+  assert.match(query, /SELECT\s+a\.MD_ID,\s+a\.VA_ID,/);
   assert.match(query, /ON sv\.VA_ID = a\.VA_ID/);
   assert.doesNotMatch(query, /BARCODE_ESISTENZA_RFID/);
 });

@@ -26,7 +26,7 @@ const CATALOG_COLUMNS = [
   "SIZE_AND_FIT",
   "VA_PREZZO_VEN",
   ...IMAGE_COLUMNS,
-];
+].map((column) => `a.${column}`);
 
 function quoteSqlUnicodeString(value) {
   return `N'${String(value || "").replace(/'/g, "''")}'`;

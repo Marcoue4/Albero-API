@@ -131,12 +131,12 @@ IMAGE_SOURCE_LOCAL_ROOT=D:\Foto
 For production, install the SQL-side stock cache and refresh it on a schedule:
 
 1. Run `npm run install-stock-cache` with a SQL login that can create tables/procedures in `dbo`.
-2. If the installer is not run as the API login, set `STOCK_CACHE_GRANT_USER=<api_db_user>` before installing so the API receives `SELECT` and `EXECUTE` permissions.
+2. If the installer is not run as the API login, set `STOCK_CACHE_GRANT_USER=<api_db_user>` before installing so the API receives the cache-table read/write grants plus `EXECUTE` on the refresh procedure.
 3. Run `npm run refresh-stock-cache` after installation, then schedule it with Windows Task Scheduler or SQL Agent.
 
-When `dbo.Albero_Stock_Cache` exists and has rows, the API reads stock from that table. Until then it falls back to the live RFID aggregation. Set `REQUIRE_SQL_STOCK_CACHE=true` in production if a missing cache should fail loudly.
+When `dbo.Albero_Stock_Cache` exists and has rows for the current `STOREFRONT_ALLOWED_STORE_NAMES` scope, the API reads stock from that table. Until then it falls back to the live RFID aggregation. Set `REQUIRE_SQL_STOCK_CACHE=true` in production if a missing cache should fail loudly.
 
-If `STOREFRONT_ALLOWED_STORE_NAMES` is set, the API bypasses `dbo.Albero_Stock_Cache` and reads live RFID stock instead because the cache table does not preserve per-store scope.
+After changing `STOREFRONT_ALLOWED_STORE_NAMES`, run `npm run install-stock-cache` once to apply the scoped-cache SQL update if needed, then run `npm run refresh-stock-cache` so the cache is rebuilt for the new store scope.
 
 ## Runtime Admin Data
 

@@ -1,5 +1,5 @@
 const config = require("../config");
-const { createRequest } = require("../db");
+const { createRequest, sql } = require("../db");
 const { buildStoreLocationPredicateSql } = require("../lib/storeLocationScope");
 
 let activeStockCache = {
@@ -9,7 +9,6 @@ let activeStockCache = {
 };
 
 let sqlStockCacheWarningShown = false;
-let sqlStockCacheBypassWarningShown = false;
 
 function toVariantStockMap(records) {
   const stockByVariantId = new Map();
@@ -101,25 +100,15 @@ function warnSqlStockCacheFallback(error) {
   );
 }
 
-function warnSqlStockCacheBypass() {
-  if (sqlStockCacheBypassWarningShown) {
-    return;
-  }
-
-  sqlStockCacheBypassWarningShown = true;
-  console.warn(
-    "SQL stock cache bypassed because storefront store filtering is enabled."
-  );
-}
-
 async function loadSqlStockCache() {
-  if (config.storefrontAllowedStoreNames.length) {
-    warnSqlStockCacheBypass();
-    return null;
-  }
-
   try {
-    const result = await createRequest().then((request) =>
+    const result = await createRequest([
+      {
+        name: "storeScope",
+        type: sql.NVarChar(sql.MAX),
+        value: config.storefrontAllowedStoreScope,
+      },
+    ]).then((request) =>
       setRequestTimeout(request).query(`
         SELECT
           VA_ID,
@@ -127,12 +116,18 @@ async function loadSqlStockCache() {
           qty
         FROM dbo.Albero_Stock_Cache
         WHERE qty > 0
+          AND (
+            (@storeScope IS NULL AND store_scope IS NULL)
+            OR store_scope = @storeScope
+          )
         ORDER BY VA_ID, TRY_CONVERT(int, size_label), size_label
       `)
     );
 
     if (!result.recordset.length) {
-      throw new Error("dbo.Albero_Stock_Cache exists but has no positive stock rows");
+      throw new Error(
+        `dbo.Albero_Stock_Cache has no positive rows for store scope ${config.storefrontAllowedStoreScope || "<all stores>"}`
+      );
     }
 
     return toVariantStockMap(result.recordset);

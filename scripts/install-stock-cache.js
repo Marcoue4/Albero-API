@@ -44,6 +44,12 @@ async function grantApiPermissions(userName) {
   const quotedUser = quoteSqlIdentifier(userName);
 
   await runBatch(`GRANT SELECT ON dbo.Albero_Stock_Cache TO ${quotedUser}`);
+  await runBatch(
+    `GRANT INSERT, UPDATE, DELETE ON dbo.Albero_Stock_Cache TO ${quotedUser}`
+  );
+  await runBatch(
+    `GRANT INSERT ON dbo.Albero_Stock_Cache_Refresh_Log TO ${quotedUser}`
+  );
   await runBatch(`GRANT EXECUTE ON dbo.Albero_Refresh_Stock_Cache TO ${quotedUser}`);
 }
 

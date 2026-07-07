@@ -201,7 +201,7 @@ The API reads that manifest at runtime (`src/lib/imageSyncManifest.js`) and retu
 - The main catalog view/table is `dbo.Articoli_Su_Sito_Plus` filtered by `CANCELLATO = 0`, then scoped to `STOREFRONT_ALLOWED_STORE_NAMES` via matching rows in `dbo.BARCODE_ESISTENZA_RFID`.
 - Stock is derived from `dbo.BARCODE_ESISTENZA_RFID` and filtered to `STOREFRONT_ALLOWED_STORE_NAMES`.
 - Dev-inspector routes query `sys.tables`, `INFORMATION_SCHEMA.COLUMNS`, and arbitrary table previews with identifier quoting.
-- When store filtering is enabled, the runtime bypasses `dbo.Albero_Stock_Cache` because that cache table does not preserve per-store scope.
+- `dbo.Albero_Stock_Cache` now stores a `store_scope` marker. The API will use cache rows only when their scope matches `STOREFRONT_ALLOWED_STORE_NAMES`; otherwise it falls back to live RFID stock until the cache is refreshed again.
 
 ## Security considerations
 

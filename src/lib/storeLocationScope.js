@@ -39,6 +39,11 @@ function parseAllowedStoreNames(value) {
     : [...DEFAULT_STOREFRONT_ALLOWED_STORE_NAMES];
 }
 
+function formatStoreLocationScopeValue(values) {
+  const normalized = normalizeStoreLocationList(values);
+  return normalized.length ? normalized.join(",") : null;
+}
+
 function quoteSqlUnicodeString(value) {
   return `N'${String(value || "").replace(/'/g, "''")}'`;
 }
@@ -58,6 +63,7 @@ function buildStoreLocationPredicateSql(columnExpression, allowedStoreNames) {
 module.exports = {
   DEFAULT_STOREFRONT_ALLOWED_STORE_NAMES,
   buildStoreLocationPredicateSql,
+  formatStoreLocationScopeValue,
   normalizeStoreLocationList,
   normalizeStoreLocationName,
   parseAllowedStoreNames,

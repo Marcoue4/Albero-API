@@ -16,44 +16,8 @@ function normalizeSearchText(value) {
     .trim();
 }
 
-function normalizeSeasonCode(value) {
-  const cleaned = String(value || "").trim().toUpperCase();
-  return cleaned || null;
-}
-
-function resolveCurrentSeasonCodes(products) {
-  if (config.currentSeasonCodes.length) {
-    return new Set(config.currentSeasonCodes);
-  }
-
-  let highestNumericSeason = null;
-
-  for (const product of products) {
-    const seasonCode = normalizeSeasonCode(product.seasonCode);
-    const numericSeason = Number.parseInt(seasonCode || "", 10);
-
-    if (!Number.isFinite(numericSeason)) {
-      continue;
-    }
-
-    if (highestNumericSeason === null || numericSeason > highestNumericSeason) {
-      highestNumericSeason = numericSeason;
-    }
-  }
-
-  return new Set(highestNumericSeason === null ? [] : [String(highestNumericSeason)]);
-}
-
-function isCurrentSeasonProduct(product, currentSeasonCodes) {
-  const seasonCode = normalizeSeasonCode(product.seasonCode);
-  return Boolean(seasonCode && currentSeasonCodes.has(seasonCode));
-}
-
-function isVisibleCatalogProduct(entry, currentSeasonCodes) {
-  return (
-    entry.summary.availability === "available" ||
-    isCurrentSeasonProduct(entry.summary, currentSeasonCodes)
-  );
+function isVisibleCatalogProduct(entry) {
+  return entry.summary.availability === "available";
 }
 
 function compareSeasonCodes(left, right, direction = "desc") {
@@ -191,7 +155,12 @@ function buildFacetEntries(items, selector, labelSelector) {
   });
 }
 
-function createCatalogService() {
+function createCatalogService(options = {}) {
+  const loadCatalogRows = options.getActiveCatalogRows || getActiveCatalogRows;
+  const loadActiveVariantTotals =
+    options.getActiveVariantTotals || getActiveVariantTotals;
+  const loadVariantStockByIds =
+    options.getVariantStockByIds || getVariantStockByIds;
   const cache = {
     baseCatalog: null,
     expiresAt: 0,
@@ -204,7 +173,7 @@ function createCatalogService() {
       return cache.baseCatalog;
     }
 
-    const rows = await getActiveCatalogRows();
+    const rows = await loadCatalogRows();
     const baseCatalog = mapCatalogRowsToBaseCatalog(rows);
 
     cache.baseCatalog = baseCatalog;
@@ -216,16 +185,15 @@ function createCatalogService() {
   async function getLiveProducts() {
     const [baseCatalog, liveStock] = await Promise.all([
       getBaseCatalog(),
-      getActiveVariantTotals(),
+      loadActiveVariantTotals(),
     ]);
-    const currentSeasonCodes = resolveCurrentSeasonCodes(baseCatalog.products);
 
     return baseCatalog.products
       .map((product) => ({
         base: product,
         summary: buildProductSummary(product, liveStock),
       }))
-      .filter((entry) => isVisibleCatalogProduct(entry, currentSeasonCodes));
+      .filter(isVisibleCatalogProduct);
   }
 
   return {
@@ -257,13 +225,12 @@ function createCatalogService() {
         throw HttpError.notFound(`Product not found: ${productId}`);
       }
 
-      const stockByVariantId = await getVariantStockByIds(
+      const stockByVariantId = await loadVariantStockByIds(
         product.variants.map((variant) => variant.variantId)
       );
       const detail = buildProductDetail(product, stockByVariantId);
-      const currentSeasonCodes = resolveCurrentSeasonCodes(baseCatalog.products);
 
-      if (detail.availability !== "available" && !isCurrentSeasonProduct(detail, currentSeasonCodes)) {
+      if (detail.availability !== "available") {
         throw HttpError.notFound(`Product not found: ${productId}`);
       }
 
@@ -288,7 +255,7 @@ function createCatalogService() {
         .map((sku) => baseCatalog.variantBySku.get(sku))
         .filter(Boolean);
       const uniqueVariantIds = [...new Set(variantRefs.map((entry) => entry.variantId))];
-      const stockByVariantId = await getVariantStockByIds(uniqueVariantIds);
+      const stockByVariantId = await loadVariantStockByIds(uniqueVariantIds);
       const response = {};
 
       for (const variantRef of variantRefs) {

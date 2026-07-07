@@ -105,6 +105,7 @@ Important optional variables:
 - `CATALOG_CACHE_TTL_MS` — in-memory catalog cache TTL (default `60000`)
 - `DEFAULT_PAGE_SIZE` / `MAX_PAGE_SIZE` — pagination limits
 - `MAX_STOCK_LOOKUP_SKUS` — cap for `POST /api/stock/lookup` (default `100`)
+- `STOREFRONT_ALLOWED_STORE_NAMES` — comma-separated store names allowed to appear on the storefront; defaults to the current five Albero locations
 - `BLOB_READ_WRITE_TOKEN` or `BLOB_PUBLIC_READ_WRITE_TOKEN` — Vercel Blob token
 - `BLOB_STORE_ID` or `BLOB_PUBLIC_STORE_ID` — Vercel Blob store ID
 - `IMAGE_SOURCE_DB_ROOT` — UNC root stored in SQL, e.g. `\\SERVER-ATELIER\Foto`
@@ -197,9 +198,10 @@ The API reads that manifest at runtime (`src/lib/imageSyncManifest.js`) and retu
 
 - The application connects to a single SQL Server database via `mssql`.
 - Connection pool defaults: `max: 10`, `min: 0`, `idleTimeoutMillis: 30000`.
-- The main catalog view/table is `dbo.Articoli_Su_Sito_Plus` filtered by `CANCELLATO = 0`.
-- Stock is derived from `dbo.Barcode` joined with `dbo.Taglie_righe`.
+- The main catalog view/table is `dbo.Articoli_Su_Sito_Plus` filtered by `CANCELLATO = 0`, then scoped to `STOREFRONT_ALLOWED_STORE_NAMES` via matching rows in `dbo.BARCODE_ESISTENZA_RFID`.
+- Stock is derived from `dbo.BARCODE_ESISTENZA_RFID` and filtered to `STOREFRONT_ALLOWED_STORE_NAMES`.
 - Dev-inspector routes query `sys.tables`, `INFORMATION_SCHEMA.COLUMNS`, and arbitrary table previews with identifier quoting.
+- When store filtering is enabled, the runtime bypasses `dbo.Albero_Stock_Cache` because that cache table does not preserve per-store scope.
 
 ## Security considerations
 

@@ -1,5 +1,6 @@
 const config = require("../config");
 const { createRequest } = require("../db");
+const { buildStoreLocationPredicateSql } = require("../lib/storeLocationScope");
 
 let activeStockCache = {
   expiresAt: 0,
@@ -8,6 +9,7 @@ let activeStockCache = {
 };
 
 let sqlStockCacheWarningShown = false;
+let sqlStockCacheBypassWarningShown = false;
 
 function toVariantStockMap(records) {
   const stockByVariantId = new Map();
@@ -40,6 +42,12 @@ function setRequestTimeout(request) {
 }
 
 function getRfidStockSelect(activeVariantsSql) {
+  const storePredicate = buildStoreLocationPredicateSql(
+    "r.NE_DES",
+    config.storefrontAllowedStoreNames
+  );
+  const storeScopeClause = storePredicate ? `\n       AND ${storePredicate}` : "";
+
   return `
     WITH active_variants AS (
       ${activeVariantsSql}
@@ -55,6 +63,7 @@ function getRfidStockSelect(activeVariantsSql) {
        AND LTRIM(RTRIM(r.SIGLA_STAGIONE)) = av.season
        AND LTRIM(RTRIM(r.CODICE_MODELLO)) = av.model_code
        AND LTRIM(RTRIM(r.CODICE_VARIANTE)) = av.variant_code
+${storeScopeClause}
       GROUP BY av.VA_ID, LTRIM(RTRIM(r.TAGLIA))
       HAVING SUM(ISNULL(r.ESI_ETICHETTE, 0)) > 0
     )
@@ -92,7 +101,23 @@ function warnSqlStockCacheFallback(error) {
   );
 }
 
+function warnSqlStockCacheBypass() {
+  if (sqlStockCacheBypassWarningShown) {
+    return;
+  }
+
+  sqlStockCacheBypassWarningShown = true;
+  console.warn(
+    "SQL stock cache bypassed because storefront store filtering is enabled."
+  );
+}
+
 async function loadSqlStockCache() {
+  if (config.storefrontAllowedStoreNames.length) {
+    warnSqlStockCacheBypass();
+    return null;
+  }
+
   try {
     const result = await createRequest().then((request) =>
       setRequestTimeout(request).query(`

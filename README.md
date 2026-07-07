@@ -45,6 +45,8 @@ Supported query params:
 - `pageSize=24`
 - `sort=season-desc|season-asc|name-asc|name-desc|price-asc|price-desc`
 
+Storefront visibility is scoped to the locations listed in `STOREFRONT_ALLOWED_STORE_NAMES`.
+
 ### `GET /api/products/:productId`
 
 Returns a single grouped product with:
@@ -134,6 +136,8 @@ For production, install the SQL-side stock cache and refresh it on a schedule:
 
 When `dbo.Albero_Stock_Cache` exists and has rows, the API reads stock from that table. Until then it falls back to the live RFID aggregation. Set `REQUIRE_SQL_STOCK_CACHE=true` in production if a missing cache should fail loudly.
 
+If `STOREFRONT_ALLOWED_STORE_NAMES` is set, the API bypasses `dbo.Albero_Stock_Cache` and reads live RFID stock instead because the cache table does not preserve per-store scope.
+
 ## Runtime Admin Data
 
 Discount rules, coupon redemptions, current season, homepage product selections, inventory overrides, and curated outfit metadata can be stored in the same SQL Server used by this API.
@@ -149,7 +153,8 @@ Discount rules, coupon redemptions, current season, homepage product selections,
 - Variant ids use `var_<VA_ID>`.
 - Variant `sku` is built as `trim(MD_CODICE) + trim(VA_CODICE)`.
 - Catalog metadata comes from `dbo.Articoli_Su_Sito_Plus`; sellable stock comes from net RFID existence, not raw barcode-label rows.
-- Unavailable products are visible only for the current season. Older-season products with zero stock are pruned from catalog totals, facets, lists, and details.
+- Storefront catalog rows and stock are both limited to `STOREFRONT_ALLOWED_STORE_NAMES` by matching `BARCODE_ESISTENZA_RFID.NE_DES`.
+- Only products with positive stock in the allowed storefront stores are returned by catalog lists, facets, detail routes, and stock lookup.
 - If the image manifest exists, product image `url` values come from it.
 - If the manifest does not exist yet, image `url` stays `null` and `sourcePath` is still returned in detailed image objects.
 

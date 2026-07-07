@@ -1,5 +1,6 @@
 const path = require("node:path");
 const dotenv = require("dotenv");
+const { parseAllowedStoreNames } = require("./lib/storeLocationScope");
 
 dotenv.config({ quiet: true });
 
@@ -27,14 +28,13 @@ const config = {
   maxStockLookupSkus: parseNumber(process.env.MAX_STOCK_LOOKUP_SKUS, 100),
   stockCacheTtlMs: parseNumber(process.env.STOCK_CACHE_TTL_MS, 300000),
   requireSqlStockCache: parseBoolean(process.env.REQUIRE_SQL_STOCK_CACHE, false),
+  storefrontAllowedStoreNames: parseAllowedStoreNames(
+    process.env.STOREFRONT_ALLOWED_STORE_NAMES
+  ),
   runtimeDataSecret:
     process.env.ALBERO_API_RUNTIME_SECRET ||
     process.env.API_RUNTIME_SECRET ||
     null,
-  currentSeasonCodes: (process.env.CURRENT_SEASON_CODES || "")
-    .split(",")
-    .map((value) => value.trim().toUpperCase())
-    .filter(Boolean),
   blob: {
     storeId:
       process.env.BLOB_STORE_ID ||

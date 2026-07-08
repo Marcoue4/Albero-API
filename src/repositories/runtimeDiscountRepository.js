@@ -121,6 +121,7 @@ function normalizeRule(value) {
     trigger,
     name: normalizeString(source.name) || "Nuova regola",
     active: source.active !== false,
+    cumulative: source.cumulative !== false,
     priority: Number.isFinite(priority) ? Math.trunc(priority) : 0,
     schedule: {
       startAt: normalizeDateString(schedule.startAt),

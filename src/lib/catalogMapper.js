@@ -144,7 +144,7 @@ function resolveVariantPricing(row) {
   const salePriceCandidate =
     toPositiveNumber(row.LI_Prezzo_SAL_ITA) ??
     toPositiveNumber(row.VA_PREZZO_SAL);
-  const saleCampaignActive =
+  const hasSalePrice =
     Number.isFinite(regularPrice) &&
     regularPrice > 0 &&
     Number.isFinite(salePriceCandidate) &&
@@ -152,9 +152,10 @@ function resolveVariantPricing(row) {
     salePriceCandidate < regularPrice;
 
   return {
-    price: saleCampaignActive ? salePriceCandidate : regularPrice,
-    originalPrice: saleCampaignActive ? regularPrice : null,
-    saleCampaignActive,
+    price: regularPrice,
+    salePrice: hasSalePrice ? salePriceCandidate : null,
+    originalPrice: null,
+    saleCampaignActive: false,
   };
 }
 
@@ -212,6 +213,7 @@ function buildVariantBase(row) {
     },
     images,
     price: pricing.price,
+    salePrice: pricing.salePrice,
     originalPrice: pricing.originalPrice,
     saleCampaignActive: pricing.saleCampaignActive,
   };
@@ -252,10 +254,7 @@ function buildBaseProduct(rows) {
   const seasonLabel = cleanText(firstRow.ST_DES) || null;
   const modelCode = normalizeCode(firstRow.MD_CODICE);
   const saleVariants = variants.filter(
-    (variant) =>
-      variant.saleCampaignActive &&
-      Number.isFinite(variant.originalPrice) &&
-      variant.originalPrice > 0
+    (variant) => Number.isFinite(variant.salePrice) && variant.salePrice > 0
   );
   const product = {
     id: buildProductId(modelId),
@@ -274,10 +273,11 @@ function buildBaseProduct(rows) {
     images,
     image: images[0]?.url ?? null,
     price: minPositivePrice(variants.map((variant) => variant.price)),
-    originalPrice: saleVariants.length
-      ? minPositivePrice(saleVariants.map((variant) => variant.originalPrice))
+    salePrice: saleVariants.length
+      ? minPositivePrice(saleVariants.map((variant) => variant.salePrice))
       : null,
-    saleCampaignActive: saleVariants.length > 0,
+    originalPrice: null,
+    saleCampaignActive: false,
     variants,
   };
 
@@ -362,6 +362,7 @@ function mergeVariantStock(variant, stock) {
     },
     images: variant.images,
     price: variant.price,
+    salePrice: variant.salePrice,
     originalPrice: variant.originalPrice,
     saleCampaignActive: variant.saleCampaignActive,
     totalStock: totalQty,
@@ -390,6 +391,7 @@ function buildProductSummary(product, stockByVariantId) {
     seasonLabel: product.seasonLabel,
     sku: primaryVariant?.sku || null,
     price: product.price,
+    salePrice: product.salePrice,
     originalPrice: product.originalPrice,
     saleCampaignActive: product.saleCampaignActive,
     image: product.image,
@@ -401,6 +403,7 @@ function buildProductSummary(product, stockByVariantId) {
       sku: variant.sku,
       image: variant.images[0]?.url ?? null,
       price: variant.price,
+      salePrice: variant.salePrice,
       originalPrice: variant.originalPrice,
       saleCampaignActive: variant.saleCampaignActive,
       totalStock: variant.totalStock,

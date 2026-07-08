@@ -102,7 +102,7 @@ test("cleans feature lines and marks zero stock as unavailable", () => {
   assert.equal(detail.variants[0].availability, "unavailable");
 });
 
-test("uses DB sale pricing only when the row is part of a sale campaign", () => {
+test("exposes DB sale pricing as an inactive campaign candidate", () => {
   const rows = [
     makeRow({
       VA_PREZZO_VEN: 199,
@@ -116,15 +116,18 @@ test("uses DB sale pricing only when the row is part of a sale campaign", () => 
   const summary = buildProductSummary(baseProduct, stock);
   const detail = buildProductDetail(baseProduct, stock);
 
-  assert.equal(baseProduct.price, 99.5);
-  assert.equal(baseProduct.originalPrice, 199);
-  assert.equal(baseProduct.saleCampaignActive, true);
-  assert.equal(summary.price, 99.5);
-  assert.equal(summary.originalPrice, 199);
-  assert.equal(summary.saleCampaignActive, true);
-  assert.equal(detail.variants[0].price, 99.5);
-  assert.equal(detail.variants[0].originalPrice, 199);
-  assert.equal(detail.variants[0].saleCampaignActive, true);
+  assert.equal(baseProduct.price, 199);
+  assert.equal(baseProduct.salePrice, 99.5);
+  assert.equal(baseProduct.originalPrice, null);
+  assert.equal(baseProduct.saleCampaignActive, false);
+  assert.equal(summary.price, 199);
+  assert.equal(summary.salePrice, 99.5);
+  assert.equal(summary.originalPrice, null);
+  assert.equal(summary.saleCampaignActive, false);
+  assert.equal(detail.variants[0].price, 199);
+  assert.equal(detail.variants[0].salePrice, 99.5);
+  assert.equal(detail.variants[0].originalPrice, null);
+  assert.equal(detail.variants[0].saleCampaignActive, false);
 });
 
 test("normalizes lowercase style names into cleaner storefront names", () => {

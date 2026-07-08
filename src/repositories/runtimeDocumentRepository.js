@@ -5,6 +5,7 @@ const ALLOWED_KEYS = new Set([
   "catalog-season",
   "home-featured",
   "home-categories",
+  "home-world-images",
   "inventory-overrides",
   "curated-outfits",
 ]);

@@ -25,6 +25,10 @@ const CATALOG_COLUMNS = [
   "SIZE_AND_FIT_IT",
   "SIZE_AND_FIT",
   "VA_PREZZO_VEN",
+  "LI_Prezzo_VEN_ITA",
+  "PREZZO_VENDITA",
+  "LI_Prezzo_SAL_ITA",
+  "VA_PREZZO_SAL",
   ...IMAGE_COLUMNS,
 ].map((column) => `a.${column}`);
 

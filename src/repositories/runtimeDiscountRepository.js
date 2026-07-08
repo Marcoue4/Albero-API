@@ -21,7 +21,8 @@ function normalizeDateString(value) {
 }
 
 function normalizeTrigger(value) {
-  return value === "coupon" ? "coupon" : "automatic";
+  if (value === "coupon" || value === "sale-campaign") return value;
+  return "automatic";
 }
 
 function normalizeAudience(value) {
@@ -73,6 +74,38 @@ function normalizeBrands(value) {
   return brands;
 }
 
+function normalizeSubtypes(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const subtypes = [];
+
+  for (const entry of value) {
+    const subtype = normalizeString(entry);
+    const key = subtype.toLowerCase();
+    if (!subtype || seen.has(key)) continue;
+    seen.add(key);
+    subtypes.push(subtype);
+  }
+
+  return subtypes;
+}
+
+function normalizeProductIds(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const productIds = [];
+
+  for (const entry of value) {
+    const productId = normalizeString(entry);
+    const key = productId.toLowerCase();
+    if (!productId || seen.has(key)) continue;
+    seen.add(key);
+    productIds.push(productId);
+  }
+
+  return productIds;
+}
+
 function normalizeRule(value) {
   const source = value && typeof value === "object" ? value : {};
   const trigger = normalizeTrigger(source.trigger);
@@ -96,6 +129,8 @@ function normalizeRule(value) {
     target: {
       brands: normalizeBrands(target.brands),
       categories: normalizeCategories(target.categories),
+      subtypes: normalizeSubtypes(target.subtypes),
+      productIds: normalizeProductIds(target.productIds),
       outletMode: normalizeOutletMode(target.outletMode),
     },
     effect: {

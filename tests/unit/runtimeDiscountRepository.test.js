@@ -66,7 +66,6 @@ test("writeDiscountRules preserves sale campaigns and granular targets", async (
         trigger: "sale-campaign",
         name: "Saldi DB",
         active: true,
-        cumulative: false,
         priority: 0,
         schedule: { startAt: null, endAt: null },
         target: {
@@ -82,7 +81,6 @@ test("writeDiscountRules preserves sale campaigns and granular targets", async (
 
     assert.equal(insertedRules.length, 1);
     assert.equal(insertedRules[0].trigger, "sale-campaign");
-    assert.equal(insertedRules[0].cumulative, false);
     assert.deepEqual(insertedRules[0].target.subtypes, ["Borse"]);
     assert.deepEqual(insertedRules[0].target.productIds, ["mdl_1"]);
   } finally {

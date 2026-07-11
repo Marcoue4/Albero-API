@@ -147,6 +147,25 @@ Discount rules, coupon redemptions, current season, homepage product selections,
 3. Run `npm run migrate-runtime-data` once to import the existing Blob JSON runtime data. Use `-- --force` only when intentionally replacing existing DB values.
 4. Keep Blob for images/files; runtime admin reads and writes should go through the API routes under `/api/runtime/discounts/*` and `/api/runtime/documents/*`.
 
+## Inventory Review Workflow
+
+The protected runtime API supports reversible unit-level transfers through:
+
+- `GET /api/runtime/inventory-review/items`
+- `GET /api/runtime/inventory-review/stock?productId=mdl_...`
+- `POST /api/runtime/inventory-review/items`
+- `POST /api/runtime/inventory-review/items/:id/resolve`
+
+Deployment is intentionally gated:
+
+1. Set `INVENTORY_REVIEW_LOCATION_NAME`. It defaults to the existing `xLavorazione` for testing; later it can be changed to `xIn Revisione` after that virtual location is created in the inventory application.
+2. Back up or restore the ERP database and validate one paired transfer there.
+3. Create a dedicated SQL login for inventory writes and set `DB_INVENTORY_WRITE_USER` / `DB_INVENTORY_WRITE_PASSWORD`.
+4. Set `INVENTORY_REVIEW_WRITER_GRANT_USER` and `INVENTORY_REVIEW_READER_GRANT_USER`, then run `npm run install-inventory-review` with an installer login.
+5. Pilot a placement and restoration before enabling the production administrator.
+
+The installer aborts unless the configured review location, `xResi Difettosi`, transfer causes 12/13, central ID range 1001, and `Albero_Stock_Cache` all match the expected ERP structure. The API writer receives procedure execution rights only.
+
 ## Notes
 
 - Product ids use `mdl_<MD_ID>`.

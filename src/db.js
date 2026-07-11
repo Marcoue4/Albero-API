@@ -2,11 +2,12 @@ const sql = require("mssql");
 const config = require("./config");
 
 let poolPromise;
+let inventoryWriterPoolPromise;
 
-function getPoolConfig() {
+function getPoolConfig(credentials = {}) {
   return {
-    user: config.db.user,
-    password: config.db.password,
+    user: credentials.user || config.db.user,
+    password: credentials.password || config.db.password,
     server: config.db.server,
     port: config.db.port,
     database: config.db.database,
@@ -22,6 +23,34 @@ function getPoolConfig() {
       enableArithAbort: true,
     },
   };
+}
+
+async function getInventoryWriterPool() {
+  if (!config.db.inventoryWriterUser || !config.db.inventoryWriterPassword) {
+    const error = new Error("Inventory writer database credentials are not configured.");
+    error.code = "INVENTORY_WRITER_NOT_CONFIGURED";
+    throw error;
+  }
+
+  if (!inventoryWriterPoolPromise) {
+    const pool = new sql.ConnectionPool(
+      getPoolConfig({
+        user: config.db.inventoryWriterUser,
+        password: config.db.inventoryWriterPassword,
+      })
+    );
+    inventoryWriterPoolPromise = pool.connect().catch((error) => {
+      inventoryWriterPoolPromise = undefined;
+      throw error;
+    });
+  }
+
+  return inventoryWriterPoolPromise;
+}
+
+async function createInventoryWriterRequest(bind = []) {
+  const pool = await getInventoryWriterPool();
+  return bindInputs(pool.request(), bind);
 }
 
 async function getPool() {
@@ -136,17 +165,17 @@ async function getTablePreview(schemaName, tableName, limit) {
 }
 
 async function closePool() {
-  if (!poolPromise) {
-    return;
-  }
-
-  const pool = await poolPromise;
+  const pools = [];
+  if (poolPromise) pools.push(poolPromise);
+  if (inventoryWriterPoolPromise) pools.push(inventoryWriterPoolPromise);
   poolPromise = undefined;
-  await pool.close();
+  inventoryWriterPoolPromise = undefined;
+  await Promise.all(pools.map(async (pending) => (await pending).close()));
 }
 
 module.exports = {
   createRequest,
+  createInventoryWriterRequest,
   closePool,
   getPool,
   getTableColumns,

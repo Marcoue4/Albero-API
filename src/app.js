@@ -6,7 +6,11 @@ const { HttpError } = require("./errors/httpError");
 const { createCatalogService } = require("./services/catalogService");
 const defaultRuntimeDiscountRepository = require("./repositories/runtimeDiscountRepository");
 const defaultRuntimeDocumentRepository = require("./repositories/runtimeDocumentRepository");
-const { getStockRuntimeCacheStatus } = require("./repositories/stockRepository");
+const defaultInventoryReviewRepository = require("./repositories/inventoryReviewRepository");
+const {
+  getStockRuntimeCacheStatus,
+  invalidateStockRuntimeCache,
+} = require("./repositories/stockRepository");
 
 const NO_STORE_HEADER = "no-store";
 
@@ -136,6 +140,8 @@ function createApp(options = {}) {
     options.runtimeDiscountRepository || defaultRuntimeDiscountRepository;
   const runtimeDocumentRepository =
     options.runtimeDocumentRepository || defaultRuntimeDocumentRepository;
+  const inventoryReviewRepository =
+    options.inventoryReviewRepository || defaultInventoryReviewRepository;
 
   app.use(
     cors({
@@ -163,6 +169,10 @@ function createApp(options = {}) {
         "GET /api/runtime/discounts/health",
         "GET /api/runtime/documents/:key",
         "PUT /api/runtime/documents/:key",
+        "GET /api/runtime/inventory-review/items",
+        "GET /api/runtime/inventory-review/stock",
+        "POST /api/runtime/inventory-review/items",
+        "POST /api/runtime/inventory-review/items/:id/resolve",
         "GET /api/meta/tables",
         "GET /api/meta/tables/:schema/:table/columns",
         "GET /api/meta/tables/:schema/:table/rows?limit=20",
@@ -411,6 +421,65 @@ function createApp(options = {}) {
         return;
       }
 
+      next(error);
+    }
+  });
+
+  app.get("/api/runtime/inventory-review/items", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+    try {
+      const items = await inventoryReviewRepository.listItems({
+        status: req.query.status,
+        q: req.query.q,
+      });
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json({ items });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/runtime/inventory-review/stock", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+    try {
+      const stock = await inventoryReviewRepository.getProductStock(req.query.productId);
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json({ stock });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/runtime/inventory-review/items", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+    try {
+      const item = await inventoryReviewRepository.placeItem(req.body || {});
+      invalidateStockRuntimeCache();
+      catalogService.clearCache();
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.status(201).json({ item });
+    } catch (error) {
+      if (["INVENTORY_REVIEW_INSUFFICIENT_STOCK", "INVENTORY_REVIEW_STATE_CONFLICT"].includes(error.code)) {
+        res.status(409).json({ error: error.message, code: error.code });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  app.post("/api/runtime/inventory-review/items/:id/resolve", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+    try {
+      const item = await inventoryReviewRepository.resolveItem(req.params.id, req.body || {});
+      invalidateStockRuntimeCache();
+      catalogService.clearCache();
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json({ item });
+    } catch (error) {
+      if (["INVENTORY_REVIEW_INSUFFICIENT_STOCK", "INVENTORY_REVIEW_STATE_CONFLICT"].includes(error.code)) {
+        res.status(409).json({ error: error.message, code: error.code });
+        return;
+      }
       next(error);
     }
   });

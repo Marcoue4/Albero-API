@@ -35,6 +35,8 @@ const config = {
   maxStockLookupSkus: parseNumber(process.env.MAX_STOCK_LOOKUP_SKUS, 100),
   stockCacheTtlMs: parseNumber(process.env.STOCK_CACHE_TTL_MS, 300000),
   requireSqlStockCache: parseBoolean(process.env.REQUIRE_SQL_STOCK_CACHE, false),
+  inventoryReviewLocationName:
+    process.env.INVENTORY_REVIEW_LOCATION_NAME || "xLavorazione",
   storefrontAllowedStoreNames,
   storefrontAllowedStoreScope:
     formatStoreLocationScopeValue(storefrontAllowedStoreNames),
@@ -88,6 +90,8 @@ const config = {
       true
     ),
     requestTimeoutMs: parseNumber(process.env.DB_REQUEST_TIMEOUT_MS, 120000),
+    inventoryWriterUser: process.env.DB_INVENTORY_WRITE_USER || null,
+    inventoryWriterPassword: process.env.DB_INVENTORY_WRITE_PASSWORD || null,
   },
 };
 

@@ -234,8 +234,17 @@ function getStockRuntimeCacheStatus() {
   };
 }
 
+function invalidateStockRuntimeCache() {
+  activeStockCache = {
+    expiresAt: 0,
+    stockByVariantId: null,
+    pending: null,
+  };
+}
+
 module.exports = {
   getActiveVariantTotals,
   getStockRuntimeCacheStatus,
   getVariantStockByIds,
+  invalidateStockRuntimeCache,
 };

@@ -10,7 +10,6 @@
     "install-stock-cache": "node scripts/install-stock-cache.js",
     "install-runtime-data": "node scripts/install-runtime-discounts.js",
     "install-runtime-discounts": "node scripts/install-runtime-discounts.js",
-    "install-inventory-review": "node scripts/install-inventory-review.js",
     "migrate-runtime-data": "node scripts/migrate-runtime-discounts.js",
     "migrate-runtime-discounts": "node scripts/migrate-runtime-discounts.js",
     "refresh-stock-cache": "node scripts/refresh-stock-cache.js",

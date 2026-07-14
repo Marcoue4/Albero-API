@@ -52,18 +52,21 @@ BEGIN
   DECLARE @refreshedAt datetime2(0) = @startedAt;
   DECLARE @rowsRefreshed int = 0;
   DECLARE @normalizedStoreScope nvarchar(max) = NULLIF(LTRIM(RTRIM(@store_scope)), N'');
+  DECLARE @stageRows int = 0;
+  DECLARE @progressMessage nvarchar(2048);
 
   BEGIN TRY
-    IF OBJECT_ID(N'tempdb..#AllowedStores', N'U') IS NOT NULL
-    BEGIN
-      DROP TABLE #AllowedStores;
-    END;
+    RAISERROR(N'Preparing store scope', 10, 1) WITH NOWAIT;
+
+    CREATE TABLE #AllowedStores (
+      store_name nvarchar(4000) NOT NULL
+    );
 
     IF @normalizedStoreScope IS NOT NULL
     BEGIN
+      INSERT INTO #AllowedStores (store_name)
       SELECT DISTINCT
         UPPER(LTRIM(RTRIM(value))) AS store_name
-      INTO #AllowedStores
       FROM STRING_SPLIT(@normalizedStoreScope, N',')
       WHERE LTRIM(RTRIM(value)) <> N'';
 
@@ -73,44 +76,93 @@ BEGIN
       END;
     END;
 
-    IF OBJECT_ID(N'tempdb..#AlberoStockRefresh', N'U') IS NOT NULL
-    BEGIN
-      DROP TABLE #AlberoStockRefresh;
-    END;
-
     SELECT
-      av.VA_ID,
-      CAST(COALESCE(NULLIF(LTRIM(RTRIM(r.TAGLIA)), N''), N'UNI') AS nvarchar(50)) AS size_label,
-      CAST(SUM(ISNULL(r.ESI_ETICHETTE, 0)) AS decimal(18, 4)) AS qty,
-      MAX(r.TE_DATA) AS source_last_movement_at,
-      @normalizedStoreScope AS store_scope,
-      @refreshedAt AS refreshed_at
-    INTO #AlberoStockRefresh
-    FROM (
-      SELECT DISTINCT
-        VA_ID,
-        LTRIM(RTRIM(TI_DES)) AS brand,
-        LTRIM(RTRIM(ST_SIGLA)) AS season,
-        LTRIM(RTRIM(MD_CODICE)) AS model_code,
-        LTRIM(RTRIM(VA_CODICE)) AS variant_code
-      FROM dbo.Articoli_Su_Sito_Plus
-      WHERE CANCELLATO = 0
-    ) av
-    INNER JOIN dbo.BARCODE_ESISTENZA_RFID r
-      ON LTRIM(RTRIM(r.BRAND)) = av.brand
-     AND LTRIM(RTRIM(r.SIGLA_STAGIONE)) = av.season
-     AND LTRIM(RTRIM(r.CODICE_MODELLO)) = av.model_code
-     AND LTRIM(RTRIM(r.CODICE_VARIANTE)) = av.variant_code
+      n.NE_ID
+    INTO #AllowedStoreIds
+    FROM dbo.Negozi n WITH (NOLOCK)
     WHERE @normalizedStoreScope IS NULL
        OR EXISTS (
             SELECT 1
             FROM #AllowedStores s
-            WHERE s.store_name = UPPER(LTRIM(RTRIM(r.NE_DES)))
-          )
-    GROUP BY av.VA_ID, COALESCE(NULLIF(LTRIM(RTRIM(r.TAGLIA)), N''), N'UNI')
-    HAVING SUM(ISNULL(r.ESI_ETICHETTE, 0)) > 0;
+            WHERE s.store_name = UPPER(LTRIM(RTRIM(n.NE_DES)))
+          );
+
+    SET @stageRows = @@ROWCOUNT;
+
+    CREATE UNIQUE CLUSTERED INDEX IX_AllowedStoreIds
+      ON #AllowedStoreIds (NE_ID);
+
+    SET @progressMessage = CONCAT(N'Store scope prepared: ', @stageRows, N' matching stores');
+    RAISERROR(@progressMessage, 10, 1) WITH NOWAIT;
+
+    SELECT DISTINCT
+      VA_ID
+    INTO #ActiveVariants
+    FROM dbo.Articoli_Su_Sito_Plus
+    WHERE CANCELLATO = 0;
+
+    SET @stageRows = @@ROWCOUNT;
+
+    CREATE UNIQUE CLUSTERED INDEX IX_ActiveVariants
+      ON #ActiveVariants (VA_ID);
+
+    SET @progressMessage = CONCAT(N'Active catalog prepared: ', @stageRows, N' variants');
+    RAISERROR(@progressMessage, 10, 1) WITH NOWAIT;
+
+    SELECT
+      b.BI_VA_ID,
+      b.BI_TR_ID
+    INTO #EligibleBarcodes
+    FROM dbo.Barcode b WITH (NOLOCK)
+    INNER JOIN #ActiveVariants av
+      ON av.VA_ID = b.BI_VA_ID
+    WHERE LEN(b.BI_BARCODE) = 11
+      AND ISNUMERIC(b.BI_BARCODE) = 1
+      AND (b.BI_CANCELLATO = 0 OR b.BI_CANCELLATO IS NULL)
+    GROUP BY b.BI_VA_ID, b.BI_TR_ID;
+
+    SET @stageRows = @@ROWCOUNT;
+
+    CREATE UNIQUE CLUSTERED INDEX IX_EligibleBarcodes
+      ON #EligibleBarcodes (BI_VA_ID, BI_TR_ID);
+
+    SET @progressMessage = CONCAT(N'Eligible barcode pairs prepared: ', @stageRows);
+    RAISERROR(@progressMessage, 10, 1) WITH NOWAIT;
+
+    RAISERROR(N'Aggregating stock movements', 10, 1) WITH NOWAIT;
+
+    SELECT
+      av.VA_ID,
+      CAST(COALESCE(NULLIF(LTRIM(RTRIM(tr.TR_DES)), N''), N'UNI') AS nvarchar(50)) AS size_label,
+      CAST(SUM(ISNULL(m.MM_QTA, 0) * ISNULL(c.CA_ESI, 0)) AS decimal(18, 4)) AS qty,
+      MAX(t.TE_DATA) AS source_last_movement_at,
+      @normalizedStoreScope AS store_scope,
+      @refreshedAt AS refreshed_at
+    INTO #AlberoStockRefresh
+    FROM #ActiveVariants av
+    INNER JOIN dbo.Movimenti m WITH (NOLOCK)
+      ON m.MM_ID_ARTICOLI = av.VA_ID
+     AND m.MM_CANCELLATO = 0
+    INNER JOIN #EligibleBarcodes eb
+      ON eb.BI_VA_ID = m.MM_ID_ARTICOLI
+     AND eb.BI_TR_ID = m.MM_ID_TAGLIE_RIGHE
+    INNER JOIN dbo.Testate t WITH (NOLOCK)
+      ON t.TE_ID_ANALYSIS = m.MM_ID_TESTATE
+    INNER JOIN #AllowedStoreIds asi
+      ON asi.NE_ID = t.TE_ID_NEGOZI
+    INNER JOIN dbo.Causali c
+      ON c.CA_ID = t.TE_ID_CAUSALI
+    INNER JOIN dbo.Taglie_righe tr WITH (NOLOCK)
+      ON tr.TR_ID = m.MM_ID_TAGLIE_RIGHE
+    GROUP BY av.VA_ID, COALESCE(NULLIF(LTRIM(RTRIM(tr.TR_DES)), N''), N'UNI')
+    HAVING SUM(ISNULL(m.MM_QTA, 0) * ISNULL(c.CA_ESI, 0)) > 0
+    OPTION (RECOMPILE);
 
     SET @rowsRefreshed = @@ROWCOUNT;
+    SET @progressMessage = CONCAT(N'Stock aggregation complete: ', @rowsRefreshed, N' cache rows');
+    RAISERROR(@progressMessage, 10, 1) WITH NOWAIT;
+
+    RAISERROR(N'Replacing cached stock rows', 10, 1) WITH NOWAIT;
 
     BEGIN TRANSACTION;
 
@@ -134,6 +186,8 @@ BEGIN
     FROM #AlberoStockRefresh;
 
     COMMIT TRANSACTION;
+
+    RAISERROR(N'Cache rows committed', 10, 1) WITH NOWAIT;
 
     INSERT INTO dbo.Albero_Stock_Cache_Refresh_Log (
       started_at,

@@ -55,9 +55,9 @@ function bindInputs(request, bind = []) {
   return request;
 }
 
-async function createRequest(bind = []) {
+async function createRequest(bind = [], overrides = {}) {
   const pool = await getPool();
-  return bindInputs(pool.request(), bind);
+  return bindInputs(pool.request(overrides), bind);
 }
 
 async function runQuery(query, bind = []) {

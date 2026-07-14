@@ -134,6 +134,10 @@ For production, install the SQL-side stock cache and refresh it on a schedule:
 2. If the installer is not run as the API login, set `STOCK_CACHE_GRANT_USER=<api_db_user>` before installing so the API receives the cache-table read/write grants plus `EXECUTE` on the refresh procedure.
 3. Run `npm run refresh-stock-cache` after installation, then schedule it with Windows Task Scheduler or SQL Agent.
 
+The refresh command prints each SQL stage plus a heartbeat while it is running. Its maintenance-specific timeout defaults to 10 minutes and can be changed with `STOCK_CACHE_REFRESH_TIMEOUT_MS`; heartbeat frequency is controlled by `STOCK_CACHE_REFRESH_PROGRESS_INTERVAL_MS` (default 10 seconds).
+
+Rerun `npm run install-stock-cache` after deploying changes to `sql/albero-stock-cache.sql`; the installer uses `CREATE OR ALTER PROCEDURE`, so existing cache rows are preserved while the procedure definition is updated.
+
 When `dbo.Albero_Stock_Cache` exists and has rows for the current `STOREFRONT_ALLOWED_STORE_NAMES` scope, the API reads stock from that table. Until then it falls back to the live RFID aggregation. Set `REQUIRE_SQL_STOCK_CACHE=true` in production if a missing cache should fail loudly.
 
 After changing `STOREFRONT_ALLOWED_STORE_NAMES`, run `npm run install-stock-cache` once to apply the scoped-cache SQL update if needed, then run `npm run refresh-stock-cache` so the cache is rebuilt for the new store scope.

@@ -20,6 +20,8 @@ The API listens on `http://0.0.0.0:5000` by default so you can test it over Tail
 - `GET /api/products/:productId`
 - `GET /api/catalog/facets`
 - `POST /api/stock/lookup`
+- `GET|POST /api/runtime/orders`
+- `GET|PATCH|DELETE /api/runtime/orders/:id`
 - `GET /api/meta/tables`
 - `GET /api/meta/tables/:schema/:table/columns`
 - `GET /api/meta/tables/:schema/:table/rows?limit=20`
@@ -150,6 +152,16 @@ Discount rules, coupon redemptions, current season, homepage product selections,
 2. Run `npm run install-runtime-data` to create the runtime admin tables.
 3. Run `npm run migrate-runtime-data` once to import the existing Blob JSON runtime data. Use `-- --force` only when intentionally replacing existing DB values.
 4. Keep Blob for images/files; runtime admin reads and writes should go through the API routes under `/api/runtime/discounts/*` and `/api/runtime/documents/*`.
+
+## Orders
+
+Orders are stored relationally in `dbo.Albero_Orders` and `dbo.Albero_Order_Items`. The runtime routes require `ALBERO_API_RUNTIME_SECRET`, and `payment_intent_id` is unique so checkout retries are idempotent.
+
+1. Run `npm run install-runtime-data` (or `npm run install-orders`) to create the tables.
+2. Set `BLOB_PUBLIC_READ_WRITE_TOKEN` (or `BLOB_READ_WRITE_TOKEN`) on the API process, then run `npm run migrate-orders` once to import legacy Blob orders.
+3. Set the same `ALBERO_API_RUNTIME_SECRET` on the API and storefront before switching production reads and writes.
+
+The migration skips existing order ids. Use `npm run migrate-orders -- --force` only when intentionally replacing matching rows. `ORDERS_JSON_PATH` can point to a local legacy `orders.json` file if Blob is unavailable.
 
 ## Notes
 

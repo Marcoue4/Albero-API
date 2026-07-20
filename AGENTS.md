@@ -41,6 +41,7 @@ albero-api/
 │   │   └── taxonomy.js         # Category/subtype/gender inference from SQL text fields
 │   ├── repositories/
 │   │   ├── catalogRepository.js# Queries against dbo.Articoli_Su_Sito_Plus
+│   │   ├── orderRepository.js  # SQL-backed order headers/items and idempotency
 │   │   └── stockRepository.js  # Queries against dbo.Barcode and dbo.Taglie_righe
 │   └── services/
 │       └── catalogService.js   # In-memory cached catalog, filtering, sorting, pagination
@@ -139,6 +140,7 @@ Public/storefront routes:
 - `GET /api/products/:productId`
 - `GET /api/catalog/facets`
 - `POST /api/stock/lookup`
+- authenticated runtime order CRUD under `/api/runtime/orders`
 
 Development-only routes (gated by `ENABLE_DEV_INSPECTOR`):
 

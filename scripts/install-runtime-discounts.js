@@ -29,20 +29,23 @@ async function grantApiPermissions(userName) {
   await runBatch(`GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.Albero_Coupon_Redemptions TO ${quotedUser}`);
   await runBatch(`GRANT INSERT ON dbo.Albero_Admin_Audit_Log TO ${quotedUser}`);
   await runBatch(`GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.Albero_Runtime_Documents TO ${quotedUser}`);
+  await runBatch(`GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.Albero_Orders TO ${quotedUser}`);
+  await runBatch(`GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.Albero_Order_Items TO ${quotedUser}`);
 }
 
 async function main() {
-  const sqlPath = path.resolve(__dirname, "../sql/albero-runtime-discounts.sql");
-  const sqlText = readFileSync(sqlPath, "utf-8");
-  const batches = sqlText.split(/^\s*GO\s*$/gim);
-
-  for (const batch of batches) {
-    await runBatch(batch);
+  const sqlPaths = [
+    path.resolve(__dirname, "../sql/albero-runtime-discounts.sql"),
+    path.resolve(__dirname, "../sql/albero-orders.sql"),
+  ];
+  for (const sqlPath of sqlPaths) {
+    const batches = readFileSync(sqlPath, "utf-8").split(/^\s*GO\s*$/gim);
+    for (const batch of batches) await runBatch(batch);
   }
 
   await grantApiPermissions(process.env.RUNTIME_DATA_GRANT_USER);
 
-  console.log("Installed Albero runtime discount tables.");
+  console.log("Installed Albero runtime data and order tables.");
   if (process.env.RUNTIME_DATA_GRANT_USER) {
     console.log(`Granted API permissions to ${process.env.RUNTIME_DATA_GRANT_USER}.`);
   }

@@ -6,6 +6,7 @@ const { HttpError } = require("./errors/httpError");
 const { createCatalogService } = require("./services/catalogService");
 const defaultRuntimeDiscountRepository = require("./repositories/runtimeDiscountRepository");
 const defaultRuntimeDocumentRepository = require("./repositories/runtimeDocumentRepository");
+const defaultOrderRepository = require("./repositories/orderRepository");
 const { getStockRuntimeCacheStatus } = require("./repositories/stockRepository");
 
 const NO_STORE_HEADER = "no-store";
@@ -136,6 +137,7 @@ function createApp(options = {}) {
     options.runtimeDiscountRepository || defaultRuntimeDiscountRepository;
   const runtimeDocumentRepository =
     options.runtimeDocumentRepository || defaultRuntimeDocumentRepository;
+  const orderRepository = options.orderRepository || defaultOrderRepository;
 
   app.use(
     cors({
@@ -163,6 +165,11 @@ function createApp(options = {}) {
         "GET /api/runtime/discounts/health",
         "GET /api/runtime/documents/:key",
         "PUT /api/runtime/documents/:key",
+        "GET /api/runtime/orders",
+        "POST /api/runtime/orders",
+        "GET /api/runtime/orders/:id",
+        "PATCH /api/runtime/orders/:id",
+        "DELETE /api/runtime/orders/:id",
         "GET /api/meta/tables",
         "GET /api/meta/tables/:schema/:table/columns",
         "GET /api/meta/tables/:schema/:table/rows?limit=20",
@@ -411,6 +418,84 @@ function createApp(options = {}) {
         return;
       }
 
+      next(error);
+    }
+  });
+
+  app.get("/api/runtime/orders", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    try {
+      const orders = await orderRepository.listOrders();
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json({ orders });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/runtime/orders", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    try {
+      const result = await orderRepository.createOrder(req.body || {});
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.status(result.created ? 201 : 200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/runtime/orders/:id", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    try {
+      const order = await orderRepository.getOrderById(req.params.id);
+      if (!order) {
+        res.status(404).json({ error: "Order not found." });
+        return;
+      }
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json({ order });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/runtime/orders/:id", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    const status = String(req.body?.status || "").toLowerCase();
+    if (!["received", "processing", "completed", "failed"].includes(status)) {
+      res.status(400).json({ error: "Invalid order status." });
+      return;
+    }
+
+    try {
+      const order = await orderRepository.updateOrderStatus(req.params.id, status);
+      if (!order) {
+        res.status(404).json({ error: "Order not found." });
+        return;
+      }
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json({ order });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/runtime/orders/:id", async (req, res, next) => {
+    if (!requireRuntimeDataAuth(req, res)) return;
+
+    try {
+      const deleted = await orderRepository.deleteOrder(req.params.id);
+      if (!deleted) {
+        res.status(404).json({ error: "Order not found." });
+        return;
+      }
+      res.set("Cache-Control", NO_STORE_HEADER);
+      res.json({ success: true });
+    } catch (error) {
       next(error);
     }
   });
